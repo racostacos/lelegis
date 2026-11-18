@@ -8,7 +8,10 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "sync:legislators": "node scripts/import-legislators.js",
-    "test:legislators": "node --test tests/legislators.test.js"
+    "test:legislators": "node --test tests/legislators.test.js",
+    "sync:bills": "node scripts/import-bills.js",
+    "test:bills": "node --test tests/bills.test.js",
+    "test:bill-sync": "node --test tests/bill-sync.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

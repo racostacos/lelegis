@@ -1,9 +1,11 @@
+import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
+
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
-      "content-type": "application/json; charset=utf-8",
-      "access-control-allow-origin": "*"
+      'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*'
     }
   });
 
@@ -109,20 +111,20 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/api/health") {
+    if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        service: "LeLegis",
+        service: 'LeLegis',
         databaseBound: Boolean(env.DB)
       });
     }
 
-    if (url.pathname === "/api/db-check") {
+    if (url.pathname === '/api/db-check') {
       if (!env.DB) {
         return json({
           ok: false,
-          database: "not bound",
-          error: "D1 binding DB is missing from the Worker environment."
+          database: 'not bound',
+          error: 'D1 binding DB is missing from the Worker environment.'
         }, 503);
       }
 
@@ -130,15 +132,11 @@ export default {
         "SELECT COUNT(*) AS table_count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
       ).first();
 
-      return json({
-        ok: true,
-        database: "connected",
-        result
-      });
+      return json({ ok: true, database: 'connected', result });
     }
 
-    if (url.pathname === "/api/bills") {
-      if (!env.DB) return json({ ok: false, error: "Database not bound" }, 503);
+    if (url.pathname === '/api/bills') {
+      if (!env.DB) return json({ ok: false, error: 'Database not bound' }, 503);
 
       const { results } = await env.DB.prepare(
         `SELECT id, instrument, subject, official_description, official_status,
@@ -152,24 +150,31 @@ export default {
     }
 
     const billDetailMatch = url.pathname.match(/^\/api\/bills\/([^/]+)\/?$/);
-    if (billDetailMatch && request.method === "GET") {
-      if (!env.DB) return json({ ok: false, error: "Database not bound" }, 503);
+    if (billDetailMatch && request.method === 'GET') {
+      if (!env.DB) return json({ ok: false, error: 'Database not bound' }, 503);
 
       let instrument;
       try {
         instrument = decodeURIComponent(billDetailMatch[1]).trim().toUpperCase();
       } catch {
-        return json({ ok: false, error: "Invalid instrument" }, 400);
+        return json({ ok: false, error: 'Invalid instrument' }, 400);
+      }
+
+      if (!/^(HB|SB|HCR|SCR|HR|SR)\d+$/.test(instrument)) {
+        return json({ ok: false, error: 'Invalid instrument' }, 400);
       }
 
       try {
-        const bill = instrument ? await getBillDetail(env, instrument) : null;
-        if (!bill) {
-          return json({ ok: false, error: "Bill not found", instrument }, 404);
-        }
+        await refreshBillForRequest(env.DB, instrument);
+        const bill = await getBillDetail(env, instrument);
+        if (!bill) return json({ ok: false, error: 'Bill not found', instrument }, 404);
         return json({ ok: true, bill });
       } catch (err) {
-        return json({ ok: false, error: "Failed to load bill", detail: String(err?.message ?? err) }, 500);
+        return json({
+          ok: false,
+          error: 'Failed to load bill',
+          detail: String(err?.message ?? err)
+        }, 500);
       }
     }
 
@@ -182,24 +187,13 @@ export default {
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #dfe8e6;
-      color: #091523;
-    }
-    main { max-width: 820px; margin: 0 auto; padding: 64px 24px; }
-    .card {
-      background: #f8faf9;
-      border: 1px solid rgba(9,21,35,.08);
-      border-radius: 28px;
-      padding: 36px;
-      box-shadow: 0 16px 50px rgba(9,21,35,.06);
-    }
-    .eyebrow { color: #0a8b83; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; }
-    h1 { font-family: Georgia, "Times New Roman", serif; font-size: clamp(48px, 8vw, 76px); margin: 10px 0 12px; line-height: .95; }
-    p { color: #536273; font-size: 18px; line-height: 1.6; }
-    a { color: #0a8b83; font-weight: 700; }
+    body { margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#dfe8e6; color:#091523; }
+    main { max-width:820px; margin:0 auto; padding:64px 24px; }
+    .card { background:#f8faf9; border:1px solid rgba(9,21,35,.08); border-radius:28px; padding:36px; box-shadow:0 16px 50px rgba(9,21,35,.06); }
+    .eyebrow { color:#0a8b83; font-weight:800; letter-spacing:.12em; text-transform:uppercase; font-size:12px; }
+    h1 { font-family:Georgia,"Times New Roman",serif; font-size:clamp(48px,8vw,76px); margin:10px 0 12px; line-height:.95; }
+    p { color:#536273; font-size:18px; line-height:1.6; }
+    a { color:#0a8b83; font-weight:700; }
   </style>
 </head>
 <body>
@@ -213,7 +207,12 @@ export default {
   </main>
 </body>
 </html>`, {
-      headers: { "content-type": "text/html; charset=utf-8" }
+      headers: { 'content-type': 'text/html; charset=utf-8' }
     });
+  },
+
+  async scheduled(_controller, env, ctx) {
+    if (!env.DB) return;
+    ctx.waitUntil(syncActiveSessions(env.DB));
   }
 };
