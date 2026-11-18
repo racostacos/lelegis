@@ -10,6 +10,13 @@
       "custom_domain": true
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lelegis",
+      "database_id": "09433f4c-b2c3-4aaf-b971-af13247f279d"
+    }
+  ],
   "observability": {
     "enabled": true
   }
