@@ -55,16 +55,17 @@ export async function beginGoogleSignIn(env, request, callbackURL = '/account') 
   }
 
   const auth = await createAuth(env);
-  const result = await auth.api.signInSocial({
+
+  // IMPORTANT:
+  // asResponse:true preserves Better Auth's Set-Cookie header containing
+  // the OAuth state/PKCE data. Rebuilding the redirect manually drops
+  // that cookie and causes state_mismatch on Google's callback.
+  return auth.api.signInSocial({
     body: {
       provider: 'google',
       callbackURL
     },
-    headers: request.headers
+    headers: request.headers,
+    asResponse: true
   });
-
-  if (result instanceof Response) return result;
-  if (result?.url) return Response.redirect(result.url, 302);
-
-  return new Response('Unable to begin sign-in.', { status:500 });
 }
