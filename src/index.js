@@ -1,5 +1,9 @@
 import { refreshBillDetailsForRequest } from './lib/bill-detail-sync.js';
 import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
+import {
+  renderHome, renderBills, renderBill,
+  renderLegislators, renderLegislator, renderNotFound
+} from './ui.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data, null, 2), {
@@ -8,6 +12,12 @@ const json = (data, status = 200) =>
       'content-type': 'application/json; charset=utf-8',
       'access-control-allow-origin': '*'
     }
+  });
+
+const html = (content, status = 200) =>
+  new Response(content, {
+    status,
+    headers: { 'content-type': 'text/html; charset=utf-8' }
   });
 
 const getBillDetail = async (env, instrument) => {
@@ -35,14 +45,12 @@ const getBillDetail = async (env, instrument) => {
          FROM bill_authors ba
          JOIN legislators l ON l.id = ba.legislator_id
         WHERE ba.bill_id = ?1 AND ba.author_type = 'PRIMARY'
-        ORDER BY ba.id
-        LIMIT 1`
+        ORDER BY ba.id LIMIT 1`
     ).bind(bill.id),
     env.DB.prepare(
       `SELECT id, action_date, chamber, official_text, normalized_action,
               journal_page, journal_url, video_url, source_order
-         FROM bill_actions
-        WHERE bill_id = ?1
+         FROM bill_actions WHERE bill_id = ?1
         ORDER BY source_order ASC, id ASC`
     ).bind(bill.id),
     env.DB.prepare(
@@ -74,13 +82,11 @@ const getBillDetail = async (env, instrument) => {
     memberVotesByEvent.get(vote_event_id).push(member);
   }
 
-  const voteEvents = voteRes.results.map((ve) => {
+  const voteEvents = voteRes.results.map(ve => {
     const { committee_id, committee_name, committee_short_name, ...rest } = ve;
     return {
       ...rest,
-      committee: committee_id
-        ? { id: committee_id, name: committee_name, short_name: committee_short_name }
-        : null,
+      committee: committee_id ? { id: committee_id, name: committee_name, short_name: committee_short_name } : null,
       member_votes: memberVotesByEvent.get(ve.id) ?? []
     };
   });
@@ -93,13 +99,9 @@ const getBillDetail = async (env, instrument) => {
   return {
     ...billFields,
     session: {
-      id: session_id,
-      code: session_code,
-      name: session_name,
-      legislature_number,
-      type: session_type,
-      start_date: session_start_date,
-      end_date: session_end_date,
+      id: session_id, code: session_code, name: session_name,
+      legislature_number, type: session_type,
+      start_date: session_start_date, end_date: session_end_date,
       is_active: Boolean(session_is_active)
     },
     primary_author: authorRes.results[0] ?? null,
@@ -108,109 +110,161 @@ const getBillDetail = async (env, instrument) => {
   };
 };
 
+const getBills = async (env, query = '', limit = 100) => {
+  const q = query.trim();
+  if (!q) {
+    const { results } = await env.DB.prepare(
+      `SELECT b.id, b.instrument, b.origin_chamber, b.subject, b.official_description,
+              b.official_status, b.normalized_status, b.act_number, b.effective_date
+         FROM bills b
+         JOIN sessions s ON s.id = b.session_id
+        ORDER BY s.start_date DESC, b.updated_at DESC, b.id DESC
+        LIMIT ?1`
+    ).bind(limit).all();
+    return results;
+  }
+
+  const like = `%${q}%`;
+  const { results } = await env.DB.prepare(
+    `SELECT b.id, b.instrument, b.origin_chamber, b.subject, b.official_description,
+            b.official_status, b.normalized_status, b.act_number, b.effective_date
+       FROM bills b
+       JOIN sessions s ON s.id = b.session_id
+      WHERE b.instrument LIKE ?1
+         OR b.subject LIKE ?1
+         OR b.official_description LIKE ?1
+         OR b.official_status LIKE ?1
+      ORDER BY s.start_date DESC, b.updated_at DESC, b.id DESC
+      LIMIT ?2`
+  ).bind(like, limit).all();
+  return results;
+};
+
+const getLegislators = async env => {
+  const { results } = await env.DB.prepare(
+    `SELECT id, official_id, display_name, first_name, last_name,
+            chamber, district_number, party, is_active
+       FROM legislators
+      WHERE is_active = 1
+      ORDER BY chamber, district_number, last_name`
+  ).all();
+  return results;
+};
+
+const getLegislator = async (env, id) => {
+  const legislator = await env.DB.prepare(
+    `SELECT id, official_id, display_name, first_name, last_name,
+            chamber, district_number, party, is_active
+       FROM legislators WHERE id = ?1 LIMIT 1`
+  ).bind(id).first();
+
+  if (!legislator) return null;
+
+  const [billRes, voteRes] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT b.instrument, b.subject, b.official_description, b.normalized_status
+         FROM bill_authors ba
+         JOIN bills b ON b.id = ba.bill_id
+        WHERE ba.legislator_id = ?1
+        ORDER BY b.updated_at DESC, b.id DESC
+        LIMIT 20`
+    ).bind(id),
+    env.DB.prepare(
+      `SELECT b.instrument, b.subject, ve.event_type, ve.motion, ve.vote_date,
+              ve.vote_time, lv.vote
+         FROM legislator_votes lv
+         JOIN vote_events ve ON ve.id = lv.vote_event_id
+         JOIN bills b ON b.id = ve.bill_id
+        WHERE lv.legislator_id = ?1
+        ORDER BY ve.vote_date DESC, ve.vote_time DESC, ve.id DESC
+        LIMIT 50`
+    ).bind(id)
+  ]);
+
+  return { ...legislator, authored_bills: billRes.results, recent_votes: voteRes.results };
+};
+
+const validInstrument = value => /^(HB|SB|HCR|SCR|HR|SR)\d+$/.test(value);
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    if (!env.DB) {
+      if (url.pathname.startsWith('/api/')) return json({ ok:false, error:'Database not bound' }, 503);
+      return html(renderNotFound('Database is not available.'), 503);
+    }
+
     if (url.pathname === '/api/health') {
-      return json({
-        ok: true,
-        service: 'LeLegis',
-        databaseBound: Boolean(env.DB)
-      });
+      return json({ ok:true, service:'LeLegis', databaseBound:true });
     }
 
     if (url.pathname === '/api/db-check') {
-      if (!env.DB) {
-        return json({
-          ok: false,
-          database: 'not bound',
-          error: 'D1 binding DB is missing from the Worker environment.'
-        }, 503);
-      }
-
       const result = await env.DB.prepare(
         "SELECT COUNT(*) AS table_count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
       ).first();
-
-      return json({ ok: true, database: 'connected', result });
+      return json({ ok:true, database:'connected', result });
     }
 
     if (url.pathname === '/api/bills') {
-      if (!env.DB) return json({ ok: false, error: 'Database not bound' }, 503);
-
-      const { results } = await env.DB.prepare(
-        `SELECT id, instrument, subject, official_description, official_status,
-                normalized_status, act_number, effective_date
-           FROM bills
-          ORDER BY id DESC
-          LIMIT 100`
-      ).all();
-
-      return json({ ok: true, bills: results });
+      const bills = await getBills(env, url.searchParams.get('q') ?? '', 100);
+      return json({ ok:true, bills });
     }
 
-    const billDetailMatch = url.pathname.match(/^\/api\/bills\/([^/]+)\/?$/);
-    if (billDetailMatch && request.method === 'GET') {
-      if (!env.DB) return json({ ok: false, error: 'Database not bound' }, 503);
-
+    const apiBillMatch = url.pathname.match(/^\/api\/bills\/([^/]+)\/?$/);
+    if (apiBillMatch && request.method === 'GET') {
       let instrument;
-      try {
-        instrument = decodeURIComponent(billDetailMatch[1]).trim().toUpperCase();
-      } catch {
-        return json({ ok: false, error: 'Invalid instrument' }, 400);
-      }
-
-      if (!/^(HB|SB|HCR|SCR|HR|SR)\d+$/.test(instrument)) {
-        return json({ ok: false, error: 'Invalid instrument' }, 400);
-      }
+      try { instrument = decodeURIComponent(apiBillMatch[1]).trim().toUpperCase(); }
+      catch { return json({ ok:false, error:'Invalid instrument' }, 400); }
+      if (!validInstrument(instrument)) return json({ ok:false, error:'Invalid instrument' }, 400);
 
       try {
         await refreshBillForRequest(env.DB, instrument);
         await refreshBillDetailsForRequest(env.DB, instrument);
         const bill = await getBillDetail(env, instrument);
-        if (!bill) return json({ ok: false, error: 'Bill not found', instrument }, 404);
-        return json({ ok: true, bill });
+        if (!bill) return json({ ok:false, error:'Bill not found', instrument }, 404);
+        return json({ ok:true, bill });
       } catch (err) {
-        return json({
-          ok: false,
-          error: 'Failed to load bill',
-          detail: String(err?.message ?? err)
-        }, 500);
+        return json({ ok:false, error:'Failed to load bill', detail:String(err?.message ?? err) }, 500);
       }
     }
 
-    return new Response(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>LeLegis</title>
-  <style>
-    :root { color-scheme: light; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#dfe8e6; color:#091523; }
-    main { max-width:820px; margin:0 auto; padding:64px 24px; }
-    .card { background:#f8faf9; border:1px solid rgba(9,21,35,.08); border-radius:28px; padding:36px; box-shadow:0 16px 50px rgba(9,21,35,.06); }
-    .eyebrow { color:#0a8b83; font-weight:800; letter-spacing:.12em; text-transform:uppercase; font-size:12px; }
-    h1 { font-family:Georgia,"Times New Roman",serif; font-size:clamp(48px,8vw,76px); margin:10px 0 12px; line-height:.95; }
-    p { color:#536273; font-size:18px; line-height:1.6; }
-    a { color:#0a8b83; font-weight:700; }
-  </style>
-</head>
-<body>
-  <main>
-    <section class="card">
-      <div class="eyebrow">Le Comrade Civic Tech</div>
-      <h1>LeLegis</h1>
-      <p>Louisiana House and Senate legislation, votes, lawmakers, and constituent alignment.</p>
-      <p><a href="/api/health">API health</a> · <a href="/api/db-check">Database check</a> · <a href="/api/bills">Bills API</a> · <a href="/api/bills/HB844">Bill detail (HB844)</a></p>
-    </section>
-  </main>
-</body>
-</html>`, {
-      headers: { 'content-type': 'text/html; charset=utf-8' }
-    });
+    const apiLegMatch = url.pathname.match(/^\/api\/legislators\/(\d+)\/?$/);
+    if (apiLegMatch) {
+      const profile = await getLegislator(env, Number(apiLegMatch[1]));
+      return profile ? json({ ok:true, legislator:profile }) : json({ ok:false, error:'Legislator not found' }, 404);
+    }
+
+    if (url.pathname === '/' || url.pathname === '') {
+      return html(renderHome({ recentBills: await getBills(env, '', 6) }));
+    }
+
+    if (url.pathname === '/bills' || url.pathname === '/bills/') {
+      const query = url.searchParams.get('q') ?? '';
+      return html(renderBills({ bills: await getBills(env, query, 150), query }));
+    }
+
+    const billPageMatch = url.pathname.match(/^\/bills\/([^/]+)\/?$/);
+    if (billPageMatch) {
+      let instrument;
+      try { instrument = decodeURIComponent(billPageMatch[1]).trim().toUpperCase(); }
+      catch { return html(renderNotFound('Invalid bill number.'), 400); }
+      if (!validInstrument(instrument)) return html(renderNotFound('Invalid bill number.'), 400);
+      const bill = await getBillDetail(env, instrument);
+      return bill ? html(renderBill(bill)) : html(renderNotFound(`${instrument} was not found.`), 404);
+    }
+
+    if (url.pathname === '/legislators' || url.pathname === '/legislators/') {
+      return html(renderLegislators({ legislators: await getLegislators(env) }));
+    }
+
+    const legPageMatch = url.pathname.match(/^\/legislators\/(\d+)\/?$/);
+    if (legPageMatch) {
+      const profile = await getLegislator(env, Number(legPageMatch[1]));
+      return profile ? html(renderLegislator(profile)) : html(renderNotFound('Legislator not found.'), 404);
+    }
+
+    return html(renderNotFound(), 404);
   },
 
   async scheduled(_controller, env, ctx) {
