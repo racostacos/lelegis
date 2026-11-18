@@ -61,9 +61,94 @@ button,.button{border:0;border-radius:14px;padding:13px 16px;background:var(--te
 <header class="sitebar"><nav class="nav"><a class="brand" href="/">LeLegis</a><div class="navlinks"><a class="${active==='bills'?'active':''}" href="/bills">Bills</a><a class="${active==='legislators'?'active':''}" href="/legislators">Legislators</a><a class="${active==='account'?'active':''}" href="${signedIn?'/account':'/login'}">${signedIn?esc(firstName(userName)):'Sign in'}</a></div></nav></header>
 ${body}<footer class="footer">LeLegis · Louisiana legislative data from official Louisiana Legislature sources.</footer></body></html>`;
 
-export function renderHome({recentBills=[],signedIn=false,userName=null}={}){
- const cards=recentBills.slice(0,6).map(b=>`<a class="bill-card" href="/bills/${encodeURIComponent(b.instrument)}"><div class="meta"><span class="chip ${String(b.origin_chamber).toLowerCase()}">${esc(b.instrument)}</span><span class="chip status">${esc(statusLabel(b.normalized_status))}</span></div><h3 style="margin-top:12px">${esc(b.subject||'No subject')}</h3><div class="muted small">${esc(b.official_description||'')}</div></a>`).join('');
- return page({title:'Louisiana Legislature, made readable',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="eyebrow">Louisiana Legislature</div><h1>Follow the bills.<br>See the votes.</h1><p class="lede">LeLegis turns Louisiana legislative records into readable bill timelines, committee motions, floor votes, and member voting records.</p><div class="search"><form action="/bills" method="get" style="display:flex;gap:10px;width:100%"><input name="q" aria-label="Search bills" placeholder="Search HB1, taxes, education, insurance..."><button>Search bills</button></form></div></section><section style="margin-top:28px"><div class="meta" style="justify-content:space-between"><h2>Recent bills</h2><a class="button secondary" href="/bills">Browse all bills</a></div><div class="stack">${cards||'<div class="empty">No bills loaded yet.</div>'}</div></section></main>`});
+export function renderHome({
+ recentBills=[],
+ signedIn=false,
+ userName=null,
+ myVote='all',
+ repVote='all',
+ representativeAvailable=false
+}={}){
+ const filterUrl=(nextMyVote=myVote,nextRepVote=repVote)=>{
+   const params=new URLSearchParams();
+   if(nextMyVote!=='all')params.set('myVote',nextMyVote);
+   if(nextRepVote!=='all')params.set('repVote',nextRepVote);
+   const query=params.toString();
+   return query?`/?${query}#recent-bills`:'/#recent-bills';
+ };
+
+ const filterButton=(label,href,active)=>`<a
+   class="chip ${active?'status':''}"
+   href="${esc(href)}"
+   style="text-decoration:none;cursor:pointer;font-weight:800;${active?'':'background:transparent'}"
+ >${esc(label)}</a>`;
+
+ const cards=recentBills.map(b=>`<a
+   class="bill-card"
+   href="/bills/${encodeURIComponent(b.instrument)}"
+   style="display:block"
+ >
+   <div class="meta">
+     <span class="chip ${String(b.origin_chamber).toLowerCase()}">${esc(b.instrument)}</span>
+     <span class="chip status">${esc(statusLabel(b.normalized_status))}</span>
+   </div>
+   <h3 style="margin-top:12px">${esc(b.subject||'No subject')}</h3>
+   <div class="muted small">${esc(b.official_description||'')}</div>
+   ${signedIn&&b.representative_voted
+     ? `<div style="margin-top:10px;font-size:.82rem;font-weight:800;color:var(--teal)">See how your representative voted</div>`
+     : ''}
+ </a>`).join('');
+
+ const filters=signedIn?`
+   <div style="display:grid;gap:10px;margin:16px 0 18px">
+     <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+       <span class="small muted" style="font-weight:800;min-width:112px">Your vote</span>
+       ${filterButton('All',filterUrl('all',repVote),myVote==='all')}
+       ${filterButton('Voted',filterUrl('voted',repVote),myVote==='voted')}
+       ${filterButton('Not voted',filterUrl('not-voted',repVote),myVote==='not-voted')}
+     </div>
+     ${representativeAvailable?`
+       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+         <span class="small muted" style="font-weight:800;min-width:112px">Representative</span>
+         ${filterButton('All',filterUrl(myVote,'all'),repVote==='all')}
+         ${filterButton('Voted',filterUrl(myVote,'voted'),repVote==='voted')}
+         ${filterButton('Not voted',filterUrl(myVote,'not-voted'),repVote==='not-voted')}
+       </div>
+     `:''}
+   </div>
+ `: '';
+
+ return page({
+   title:'Louisiana Legislature, made readable',
+   signedIn,
+   userName,
+   body:`<main class="wrap">
+     <section class="hero">
+       <div class="eyebrow">Louisiana Legislature</div>
+       <h1>Follow the bills.<br>See the votes.</h1>
+       <p class="lede">LeLegis turns Louisiana legislative records into readable bill timelines, committee motions, floor votes, and member voting records.</p>
+       <div class="search">
+         <form action="/bills" method="get" style="display:flex;gap:10px;width:100%">
+           <input name="q" aria-label="Search bills" placeholder="Search HB1, taxes, education, insurance...">
+           <button>Search bills</button>
+         </form>
+       </div>
+     </section>
+
+     <section id="recent-bills" style="margin-top:28px">
+       <div class="meta" style="justify-content:space-between">
+         <h2>Recent bills</h2>
+         <a class="button secondary" href="/bills">Browse all bills</a>
+       </div>
+
+       ${filters}
+
+       <div class="stack">
+         ${cards||'<div class="empty">No recent bills match those filters.</div>'}
+       </div>
+     </section>
+   </main>`
+ });
 }
 
 export function renderBills({bills=[],query='',signedIn=false,userName=null}){

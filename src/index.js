@@ -37,6 +37,90 @@ const getBills=async(env,query='',limit=100)=>{
   const like=`%${q}%`;const{results}=await env.DB.prepare(`SELECT b.id,b.instrument,b.origin_chamber,b.subject,b.official_description,b.official_status,b.normalized_status,b.act_number,b.effective_date FROM bills b JOIN sessions s ON s.id=b.session_id WHERE b.instrument LIKE ?1 OR b.subject LIKE ?1 OR b.official_description LIKE ?1 OR b.official_status LIKE ?1 ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC LIMIT ?2`).bind(like,limit).all();return results
 };
 
+async function getHomeBills(env,{userId=null,myVote='all',repVote='all',limit=6}={}){
+  const validMyVote=new Set(['all','voted','not-voted']);
+  const validRepVote=new Set(['all','voted','not-voted']);
+  const userFilter=validMyVote.has(myVote)?myVote:'all';
+  const repFilter=validRepVote.has(repVote)?repVote:'all';
+
+  let representativeId=null;
+
+  if(userId){
+    const settings=await getSettings(env,userId);
+    const district=Number(settings?.house_district??0);
+
+    if(district){
+      const rep=await env.DB.prepare(
+        `SELECT id
+           FROM legislators
+          WHERE is_active=1
+            AND chamber='HOUSE'
+            AND district_number=?1
+          LIMIT 1`
+      ).bind(district).first();
+
+      representativeId=rep?.id??null;
+    }
+  }
+
+  // Fetch a meaningful recent pool first, then apply the personalized filters.
+  // This avoids filtering only the six cards that would otherwise be displayed.
+  const {results}=await env.DB.prepare(
+    `SELECT
+       b.id,
+       b.instrument,
+       b.origin_chamber,
+       b.subject,
+       b.official_description,
+       b.official_status,
+       b.normalized_status,
+       b.act_number,
+       b.effective_date,
+       EXISTS(
+         SELECT 1
+           FROM user_bill_positions ubp
+          WHERE ubp.bill_id=b.id
+            AND ubp.user_id=?1
+       ) AS user_voted,
+       EXISTS(
+         SELECT 1
+           FROM legislator_votes lv
+           JOIN vote_events ve ON ve.id=lv.vote_event_id
+          WHERE lv.legislator_id=?2
+            AND ve.bill_id=b.id
+            AND ve.chamber='HOUSE'
+            AND ve.event_type='FLOOR'
+            AND lv.vote IN ('YEA','NAY')
+       ) AS representative_voted
+     FROM bills b
+     JOIN sessions s ON s.id=b.session_id
+     ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC
+     LIMIT 120`
+  ).bind(userId??'',representativeId??-1).all();
+
+  const filtered=(results??[]).filter(row=>{
+    const userVoted=Boolean(row.user_voted);
+    const representativeVoted=Boolean(row.representative_voted);
+
+    if(userFilter==='voted'&&!userVoted) return false;
+    if(userFilter==='not-voted'&&userVoted) return false;
+    if(repFilter==='voted'&&!representativeVoted) return false;
+    if(repFilter==='not-voted'&&representativeVoted) return false;
+    return true;
+  });
+
+  return {
+    bills:filtered.slice(0,limit).map(row=>({
+      ...row,
+      user_voted:Boolean(row.user_voted),
+      representative_voted:Boolean(row.representative_voted)
+    })),
+    myVote:userFilter,
+    repVote:repFilter,
+    representativeAvailable:Boolean(representativeId)
+  };
+}
+
 const getLegislators=async env=>(await env.DB.prepare(`SELECT id,official_id,display_name,first_name,last_name,chamber,district_number,party,is_active FROM legislators WHERE is_active=1 ORDER BY chamber,district_number,last_name`).all()).results;
 
 const getLegislator=async(env,id)=>{
@@ -1249,7 +1333,33 @@ export default {
       return html(renderRepresentativeOnboarding({user:session.user,settings}));
     }
 
-    if(url.pathname==='/'||url.pathname==='')return html(renderHome({recentBills:await getBills(env,'',6),signedIn,userName}));
+    if(url.pathname==='/'||url.pathname===''){
+      const myVote=url.searchParams.get('myVote')??'all';
+      const repVote=url.searchParams.get('repVote')??'all';
+
+      const homeData=signedIn
+        ? await getHomeBills(env,{
+            userId:session.user.id,
+            myVote,
+            repVote,
+            limit:6
+          })
+        : {
+            bills:await getBills(env,'',6),
+            myVote:'all',
+            repVote:'all',
+            representativeAvailable:false
+          };
+
+      return html(renderHome({
+        recentBills:homeData.bills,
+        signedIn,
+        userName,
+        myVote:homeData.myVote,
+        repVote:homeData.repVote,
+        representativeAvailable:homeData.representativeAvailable
+      }));
+    }
 
     if(url.pathname==='/bills'||url.pathname==='/bills/'){const query=url.searchParams.get('q')??'';return html(renderBills({bills:await getBills(env,query,150),query,signedIn,userName}))}
 
