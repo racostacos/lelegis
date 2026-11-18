@@ -807,22 +807,32 @@ ${sourcePack}`;
 }
 
 async function ensureBillSummary(env,bill,{force=false}={}){
+  let documents=[];
+  let discoveryError=null;
+
+  try{
+    documents=await fetchSummaryDocuments(bill);
+  }catch(err){
+    discoveryError=String(err?.message??err);
+  }
+
   if(!env.AI){
     return {
       text:bill.official_description||'No summary is currently available.',
-      sources:[],
-      generated:false
+      sources:documents,
+      generated:false,
+      reason:'AI_BINDING_MISSING',
+      discovery_error:discoveryError
     };
   }
-
-  let documents=[];
-  try{documents=await fetchSummaryDocuments(bill)}catch{}
 
   if(!documents.length){
     return {
       text:bill.official_description||'No summary is currently available.',
       sources:[],
-      generated:false
+      generated:false,
+      reason:'NO_SOURCE_DOCUMENTS',
+      discovery_error:discoveryError
     };
   }
 
@@ -904,7 +914,7 @@ export default {
       catch(err){return html(renderNotFound(`Could not start Google sign-in: ${String(err?.message??err)}`),500)}
     }
 
-    if(url.pathname==='/api/health')return json({ok:true,service:'LeLegis',databaseBound:true,authConfigured:Boolean(env.BETTER_AUTH_SECRET),providers:authProviders(env)});
+    if(url.pathname==='/api/health')return json({ok:true,service:'LeLegis',databaseBound:true,authConfigured:Boolean(env.BETTER_AUTH_SECRET),aiBound:Boolean(env.AI),providers:authProviders(env)});
     if(url.pathname==='/api/db-check'){const result=await env.DB.prepare("SELECT COUNT(*) AS table_count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").first();return json({ok:true,database:'connected',result})}
 
     if(url.pathname==='/api/bills'){const bills=await getBills(env,url.searchParams.get('q')??'',100);return json({ok:true,bills})}
