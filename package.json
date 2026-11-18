@@ -6,7 +6,9 @@
   "scripts": {
     "build": "echo \"No build step required for LeLegis Worker\"",
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
+    "dev": "wrangler dev",
+    "sync:legislators": "node scripts/import-legislators.js",
+    "test:legislators": "node --test tests/legislators.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
