@@ -3,7 +3,7 @@ import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
 import {
   renderHome, renderBills, renderBill, renderLegislators, renderLegislator,
-  renderLogin, renderAccount, renderNotFound
+  renderLogin, renderAccount, renderRepresentativeOnboarding, renderNotFound
 } from './ui.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data,null,2),{status,headers:{'content-type':'application/json; charset=utf-8','access-control-allow-origin':'*'}});
@@ -132,6 +132,201 @@ async function getDashboardStats(env,userId,positions,members){
   };
 }
 
+
+function pointInRing(lon,lat,ring){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const xi=ring[i][0], yi=ring[i][1], xj=ring[j][0], yj=ring[j][1];
+    const intersect=((yi>lat)!=(yj>lat))&&(lon<(xj-xi)*(lat-yi)/((yj-yi)||Number.EPSILON)+xi);
+    if(intersect) inside=!inside;
+  }
+  return inside;
+}
+
+function pointInPolygon(lon,lat,polygon){
+  if(!polygon?.length||!pointInRing(lon,lat,polygon[0])) return false;
+  for(let i=1;i<polygon.length;i++) if(pointInRing(lon,lat,polygon[i])) return false;
+  return true;
+}
+
+function geometryContains(geometry,lon,lat){
+  if(!geometry) return false;
+  if(geometry.type==='Polygon') return pointInPolygon(lon,lat,geometry.coordinates);
+  if(geometry.type==='MultiPolygon') return geometry.coordinates.some(p=>pointInPolygon(lon,lat,p));
+  return false;
+}
+
+async function resolveDistrictAtPoint(env, chamber, lon, lat){
+  const {results}=await env.DB.prepare(
+    `SELECT district_number,geometry_json,geometry_gzip_b64,source_name,source_url,effective_label
+       FROM district_geometries
+      WHERE chamber=?1
+        AND ?2 BETWEEN min_lon AND max_lon
+        AND ?3 BETWEEN min_lat AND max_lat`
+  ).bind(chamber,lon,lat).all();
+
+  for(const row of results){
+    try{
+      let geometry;
+      let encoded=row.geometry_gzip_b64;
+
+      if(!encoded){
+        const chunkRes=await env.DB.prepare(
+          `SELECT chunk_text
+             FROM district_geometry_chunks
+            WHERE chamber=?1 AND district_number=?2
+            ORDER BY chunk_index ASC`
+        ).bind(chamber,row.district_number).all();
+
+        if(chunkRes.results.length){
+          encoded=chunkRes.results.map(x=>x.chunk_text).join('');
+        }
+      }
+
+      if(encoded){
+        const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
+        const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+        geometry=JSON.parse(await new Response(stream).text());
+      }else{
+        geometry=JSON.parse(row.geometry_json);
+      }
+
+      if(geometryContains(geometry,lon,lat)) return row;
+    }catch{}
+  }
+  return null;
+}
+
+async function fetchJsonWithTimeout(url, options={}, timeoutMs=8000){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const r=await fetch(url,{...options,signal:controller.signal});
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+async function arcgisGeocode(singleLine,{postalOnly=false}={}){
+  const u=new URL('https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates');
+  u.searchParams.set('SingleLine',singleLine);
+  u.searchParams.set('sourceCountry','USA');
+  u.searchParams.set('searchExtent','-94.10,28.80,-88.70,33.10');
+  u.searchParams.set('maxLocations','1');
+  u.searchParams.set('forStorage','false');
+  u.searchParams.set('outFields','Match_addr,Addr_type,Region,Postal');
+  if(postalOnly) u.searchParams.set('category','Postal');
+  u.searchParams.set('f','json');
+
+  const data=await fetchJsonWithTimeout(u,{},8000);
+  const candidate=data?.candidates?.[0];
+  if(!candidate?.location) return null;
+
+  const region=String(candidate.attributes?.Region??'').toUpperCase();
+  if(region && region!=='LA' && region!=='LOUISIANA') return null;
+
+  return {
+    lon:Number(candidate.location.x),
+    lat:Number(candidate.location.y),
+    label:candidate.address||singleLine,
+    approximate:postalOnly
+  };
+}
+
+async function geocodeAddress(address){
+  const value=String(address??'').trim();
+  if(!value) return null;
+
+  // First choice: U.S. Census Geocoder.
+  try{
+    const u=new URL('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress');
+    u.searchParams.set('address',value);
+    u.searchParams.set('benchmark','Public_AR_Current');
+    u.searchParams.set('format','json');
+
+    const data=await fetchJsonWithTimeout(u,{},8000);
+    const match=data?.result?.addressMatches?.[0];
+    if(match?.coordinates){
+      return {
+        lon:Number(match.coordinates.x),
+        lat:Number(match.coordinates.y),
+        label:match.matchedAddress||value,
+        approximate:false
+      };
+    }
+  }catch{}
+
+  // Fallback if Census is slow/unavailable or does not match the address.
+  try{
+    return await arcgisGeocode(value,{postalOnly:false});
+  }catch{
+    return null;
+  }
+}
+
+async function geocodeZip(zip){
+  const value=String(zip??'').trim();
+  if(!/^\d{5}$/.test(value)) return null;
+
+  // ArcGIS can geocode a postal code directly without a stored-geocode token.
+  try{
+    const result=await arcgisGeocode(`${value}, Louisiana`,{postalOnly:true});
+    if(result) return {...result,label:`ZIP ${value}`,approximate:true};
+  }catch{}
+
+  // Legacy fallback, also hard-timed so it can never hang the request.
+  try{
+    const data=await fetchJsonWithTimeout(
+      `https://api.zippopotam.us/us/${encodeURIComponent(value)}`,
+      {},
+      6000
+    );
+    const place=data?.places?.[0];
+    if(!place) return null;
+    const state=String(place['state abbreviation']??'').toUpperCase();
+    if(state && state!=='LA') return null;
+    return {
+      lon:Number(place.longitude),
+      lat:Number(place.latitude),
+      label:`ZIP ${value}`,
+      approximate:true
+    };
+  }catch{
+    return null;
+  }
+}
+
+async function representativeLookup(env,{mode,address,zip,lon,lat}){
+  let point;
+  if(mode==='address') point=await geocodeAddress(String(address??'').trim());
+  else if(mode==='zip') point=await geocodeZip(String(zip??'').trim());
+  else if(mode==='location') point={lon:Number(lon),lat:Number(lat),label:'Current location',approximate:false};
+  else throw new Error('Invalid lookup mode');
+
+  if(!point||!Number.isFinite(point.lon)||!Number.isFinite(point.lat)) return null;
+  if(point.lat<28.8||point.lat>33.1||point.lon<-94.1||point.lon>-88.7) return null;
+
+  const [house,senate]=await Promise.all([
+    resolveDistrictAtPoint(env,'HOUSE',point.lon,point.lat),
+    resolveDistrictAtPoint(env,'SENATE',point.lon,point.lat)
+  ]);
+  if(!house||!senate) return null;
+
+  const [houseMember,senateMember]=await Promise.all([
+    env.DB.prepare(`SELECT id,display_name,party,chamber,district_number FROM legislators WHERE is_active=1 AND chamber='HOUSE' AND district_number=?1 LIMIT 1`).bind(house.district_number).first(),
+    env.DB.prepare(`SELECT id,display_name,party,chamber,district_number FROM legislators WHERE is_active=1 AND chamber='SENATE' AND district_number=?1 LIMIT 1`).bind(senate.district_number).first()
+  ]);
+
+  return {
+    label:point.label,
+    approximate:point.approximate,
+    house:{district_number:house.district_number,member:houseMember,source_name:house.source_name,source_url:house.source_url},
+    senate:{district_number:senate.district_number,member:senateMember,source_name:senate.source_name,source_url:senate.source_url}
+  };
+}
+
 async function requireSession(env,request){
   const session=await getSession(env,request);
   return session?.user?session:null;
@@ -191,6 +386,18 @@ export default {
       return json({ok:true,alignment:await getAlignment(env,session.user.id)});
     }
 
+    if(url.pathname==='/api/representatives/lookup'&&request.method==='POST'){
+      const session=await requireSession(env,request);if(!session)return json({ok:false,error:'Authentication required'},401);
+      const body=await request.json().catch(()=>({}));
+      try{
+        const result=await representativeLookup(env,body);
+        if(!result)return json({ok:false,error:'Could not determine Louisiana legislative districts for that location.'},404);
+        return json({ok:true,result});
+      }catch(err){
+        return json({ok:false,error:String(err?.message??err)},400);
+      }
+    }
+
     if(url.pathname==='/api/me/settings'&&request.method==='PUT'){
       const session=await requireSession(env,request);if(!session)return json({ok:false,error:'Authentication required'},401);
       const body=await request.json().catch(()=>({}));
@@ -229,9 +436,18 @@ export default {
         getAlignment(env,session.user.id),
         getSettings(env,session.user.id)
       ]);
+      if(!settings.house_district||!settings.senate_district){
+        return Response.redirect(`${url.origin}/onboarding/representatives`,302);
+      }
       const members=await getYourMembers(env,settings,alignment);
       const stats=await getDashboardStats(env,session.user.id,positions,members);
       return html(renderAccount({user:session.user,positions,alignment,settings,members,stats}));
+    }
+
+    if(url.pathname==='/onboarding/representatives'||url.pathname==='/onboarding/representatives/'){
+      if(!signedIn)return Response.redirect(`${url.origin}/login?next=%2Fonboarding%2Frepresentatives`,302);
+      const settings=await getSettings(env,session.user.id);
+      return html(renderRepresentativeOnboarding({user:session.user,settings}));
     }
 
     if(url.pathname==='/'||url.pathname==='')return html(renderHome({recentBills:await getBills(env,'',6),signedIn,userName}));

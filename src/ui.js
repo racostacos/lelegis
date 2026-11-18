@@ -94,7 +94,7 @@ export function renderAccount({user,positions=[],alignment=[],settings={},member
  </div>
 
  <section class="panel account-section" id="settings"><h2>Settings</h2><div class="settings-grid">
-   <div class="setting-block"><h3>Your legislative districts</h3><p class="small muted">Used only to identify your Louisiana House and Senate members. LeLegis does not need your street address.</p>
+   <div class="setting-block"><h3>Your legislative districts</h3><p class="small muted">Used only to identify your Louisiana House and Senate members. LeLegis does not need your street address.</p><p class="small"><a href="/onboarding/representatives">Find my districts by address, ZIP, or current location</a></p>
      <div class="form-row">
        <label class="field-label">House district<input class="field" id="house-district" type="number" min="1" max="105" value="${esc(houseVal)}" placeholder="1–105"></label>
        <label class="field-label">Senate district<input class="field" id="senate-district" type="number" min="1" max="39" value="${esc(senateVal)}" placeholder="1–39"></label>
@@ -123,6 +123,118 @@ export function renderAccount({user,positions=[],alignment=[],settings={},member
    location.href='/';
  });
  </script>`});
+}
+
+
+export function renderRepresentativeOnboarding({user,settings={}}){
+  return page({title:'Find your representatives',active:'account',signedIn:true,userName:user.name,body:`<main class="wrap">
+    <section class="hero">
+      <div class="eyebrow">Welcome to LeLegis</div>
+      <h1>Find your representatives</h1>
+      <p class="lede">Use your Louisiana address, ZIP code, or current location. LeLegis uses the Louisiana Legislature's enacted House and Senate district maps to determine your districts. Your address or coordinates are used for this lookup only and are not saved.</p>
+    </section>
+
+    <section class="panel account-section">
+      <div class="lookup-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+        <button class="button secondary lookup-tab" data-mode="address">Address</button>
+        <button class="button secondary lookup-tab" data-mode="zip">ZIP code</button>
+        <button class="button secondary lookup-tab" data-mode="location">Current location</button>
+      </div>
+
+      <div id="lookup-address" class="lookup-pane">
+        <label class="field-label">Louisiana street address
+          <input id="address-input" class="field" placeholder="123 Main St, Baton Rouge, LA 70802">
+        </label>
+        <button id="address-find" style="margin-top:12px">Find my representatives</button>
+      </div>
+
+      <div id="lookup-zip" class="lookup-pane" hidden>
+        <label class="field-label">Louisiana ZIP code
+          <input id="zip-input" class="field" inputmode="numeric" maxlength="5" placeholder="70802">
+        </label>
+        <p class="small muted">ZIP lookup uses the ZIP's geographic center and may be approximate if the ZIP crosses district lines. Address or current location is more precise.</p>
+        <button id="zip-find">Find by ZIP</button>
+      </div>
+
+      <div id="lookup-location" class="lookup-pane" hidden>
+        <p class="muted">Your browser will ask permission to use your current location. LeLegis does not save the coordinates.</p>
+        <button id="location-find">Use my current location</button>
+      </div>
+
+      <div id="lookup-status" class="small muted" style="margin-top:16px"></div>
+      <div id="lookup-result" style="margin-top:18px"></div>
+    </section>
+
+    <section class="panel account-section">
+      <h2>Already know your districts?</h2>
+      <div class="form-row">
+        <label class="field-label">House district<input id="manual-house" class="field" type="number" min="1" max="105" value="${esc(settings.house_district??'')}" placeholder="1–105"></label>
+        <label class="field-label">Senate district<input id="manual-senate" class="field" type="number" min="1" max="39" value="${esc(settings.senate_district??'')}" placeholder="1–39"></label>
+        <button id="manual-save">Save districts</button>
+      </div>
+    </section>
+  </main>
+<script>
+let found=null;
+const panes={address:document.getElementById('lookup-address'),zip:document.getElementById('lookup-zip'),location:document.getElementById('lookup-location')};
+document.querySelectorAll('.lookup-tab').forEach(btn=>btn.addEventListener('click',()=>{Object.entries(panes).forEach(([k,p])=>p.hidden=k!==btn.dataset.mode)}));
+
+async function lookup(body){
+  const status=document.getElementById('lookup-status'), result=document.getElementById('lookup-result');
+  status.textContent='Looking up your Louisiana legislative districts…'; result.innerHTML='';
+
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),20000);
+
+  let r,data;
+  try{
+    r=await fetch('/api/representatives/lookup',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify(body),
+      signal:controller.signal
+    });
+    data=await r.json();
+  }catch(err){
+    status.textContent=err?.name==='AbortError'
+      ? 'The address service took too long. Try again, use current location, or enter your districts manually.'
+      : 'The address lookup could not be completed. Try again or use current location.';
+    return;
+  }finally{
+    clearTimeout(timer);
+  }
+
+  if(!r.ok){status.textContent=data.error||'Lookup failed.';return}
+  found=data.result; status.textContent='';
+  const approx=found.approximate?'<div class="small muted" style="margin-bottom:10px">ZIP result is approximate. Confirm the districts below, or use address/current location for a precise lookup.</div>':'';
+  result.innerHTML=approx+'<div class="member-grid">'+
+    '<div class="member-card"><div><div class="eyebrow">Louisiana House</div><h3>District '+found.house.district_number+'</h3><div class="muted">'+(found.house.member?.display_name||'Current seat lookup unavailable')+'</div></div></div>'+
+    '<div class="member-card"><div><div class="eyebrow">Louisiana Senate</div><h3>District '+found.senate.district_number+'</h3><div class="muted">'+(found.senate.member?.display_name||'Current seat lookup unavailable')+'</div></div></div>'+
+  '</div><button id="save-found" style="margin-top:16px">Save these as my districts</button>';
+  document.getElementById('save-found').addEventListener('click',()=>save(found.house.district_number,found.senate.district_number));
+}
+
+async function save(house,senate){
+  const r=await fetch('/api/me/settings',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({house_district:house,senate_district:senate})});
+  const data=await r.json();
+  if(!r.ok){document.getElementById('lookup-status').textContent=data.error||'Could not save districts.';return}
+  location.href='/account';
+}
+
+document.getElementById('address-find').addEventListener('click',()=>lookup({mode:'address',address:document.getElementById('address-input').value}));
+document.getElementById('zip-find').addEventListener('click',()=>lookup({mode:'zip',zip:document.getElementById('zip-input').value}));
+document.getElementById('location-find').addEventListener('click',()=>{
+  const status=document.getElementById('lookup-status');
+  if(!navigator.geolocation){status.textContent='Current location is not available in this browser.';return}
+  status.textContent='Waiting for location permission…';
+  navigator.geolocation.getCurrentPosition(
+    p=>lookup({mode:'location',lat:p.coords.latitude,lon:p.coords.longitude}),
+    ()=>status.textContent='Location permission was denied or unavailable.',
+    {enableHighAccuracy:true,timeout:10000,maximumAge:60000}
+  );
+});
+document.getElementById('manual-save').addEventListener('click',()=>save(document.getElementById('manual-house').value,document.getElementById('manual-senate').value));
+</script>`});
 }
 
 export function renderNotFound(message='Not found',signedIn=false,userName=null){
