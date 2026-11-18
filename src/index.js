@@ -73,17 +73,13 @@ function comparisonPriority(motion=''){
 
 async function getAlignment(env,userId){
   const rows=(await env.DB.prepare(`SELECT ubp.bill_id,ubp.position AS user_position,b.instrument,l.id AS legislator_id,l.display_name,l.party,l.chamber,l.district_number,lv.vote,ve.id AS vote_event_id,ve.motion,ve.vote_date,ve.vote_time FROM user_bill_positions ubp JOIN bills b ON b.id=ubp.bill_id JOIN vote_events ve ON ve.bill_id=b.id AND ve.event_type='FLOOR' JOIN legislator_votes lv ON lv.vote_event_id=ve.id JOIN legislators l ON l.id=lv.legislator_id WHERE ubp.user_id=?1 AND lv.vote IN ('YEA','NAY')`).bind(userId).all()).results;
-
   const chosen=new Map();
   for(const r of rows){
-    const priority=comparisonPriority(r.motion);
-    if(!priority)continue;
+    const priority=comparisonPriority(r.motion);if(!priority)continue;
     const key=`${r.bill_id}:${r.legislator_id}`;
     const rank=`${String(priority).padStart(2,'0')}:${r.vote_date??''}:${r.vote_time??''}:${String(r.vote_event_id).padStart(12,'0')}`;
-    const current=chosen.get(key);
-    if(!current||rank>current.rank)chosen.set(key,{...r,rank});
+    const current=chosen.get(key);if(!current||rank>current.rank)chosen.set(key,{...r,rank});
   }
-
   const scores=new Map();
   for(const r of chosen.values()){
     if(!scores.has(r.legislator_id))scores.set(r.legislator_id,{legislator_id:r.legislator_id,display_name:r.display_name,party:r.party,chamber:r.chamber,district_number:r.district_number,matches:0,disagreements:0,comparable:0});
@@ -92,6 +88,48 @@ async function getAlignment(env,userId){
     s.comparable+=1;if(match)s.matches+=1;else s.disagreements+=1;
   }
   return [...scores.values()].map(s=>({...s,percent:s.comparable?Math.round((s.matches/s.comparable)*100):0})).sort((a,b)=>b.percent-a.percent||b.comparable-a.comparable||a.display_name.localeCompare(b.display_name));
+}
+
+async function getSettings(env,userId){
+  let row=await env.DB.prepare(`SELECT house_district,senate_district,public_profile,public_alignment FROM user_settings WHERE user_id=?1`).bind(userId).first();
+  if(!row){
+    await env.DB.prepare(`INSERT OR IGNORE INTO user_settings(user_id) VALUES(?1)`).bind(userId).run();
+    row={house_district:null,senate_district:null,public_profile:0,public_alignment:0};
+  }
+  return row;
+}
+
+async function getYourMembers(env,settings,alignment){
+  const wanted=[];
+  if(settings.house_district)wanted.push(['HOUSE',Number(settings.house_district)]);
+  if(settings.senate_district)wanted.push(['SENATE',Number(settings.senate_district)]);
+  if(!wanted.length)return [];
+  const members=[];
+  for(const[chamber,district]of wanted){
+    const member=await env.DB.prepare(`SELECT id AS legislator_id,display_name,first_name,last_name,party,chamber,district_number FROM legislators WHERE is_active=1 AND chamber=?1 AND district_number=?2 LIMIT 1`).bind(chamber,district).first();
+    if(member){
+      const score=alignment.find(a=>a.legislator_id===member.legislator_id);
+      members.push({...member,alignment:score??null});
+    }
+  }
+  return members;
+}
+
+async function getDashboardStats(env,userId,positions,members){
+  const [commentRow,swayRow]=await env.DB.batch([
+    env.DB.prepare(`SELECT COUNT(*) AS count FROM user_comments WHERE user_id=?1`).bind(userId),
+    env.DB.prepare(`SELECT COUNT(*) AS count FROM comment_likes cl JOIN user_comments uc ON uc.id=cl.comment_id WHERE uc.user_id=?1`).bind(userId)
+  ]);
+  const comparable=members.filter(m=>m.alignment?.comparable>0);
+  const representativeAlignment=comparable.length
+    ? Math.round(comparable.reduce((sum,m)=>sum+m.alignment.percent,0)/comparable.length)
+    : null;
+  return{
+    billsVoted:positions.length,
+    comments:Number(commentRow.results?.[0]?.count??0),
+    sway:Number(swayRow.results?.[0]?.count??0),
+    representativeAlignment
+  };
 }
 
 async function requireSession(env,request){
@@ -153,11 +191,31 @@ export default {
       return json({ok:true,alignment:await getAlignment(env,session.user.id)});
     }
 
+    if(url.pathname==='/api/me/settings'&&request.method==='PUT'){
+      const session=await requireSession(env,request);if(!session)return json({ok:false,error:'Authentication required'},401);
+      const body=await request.json().catch(()=>({}));
+      const house=body.house_district===''||body.house_district==null?null:Number(body.house_district);
+      const senate=body.senate_district===''||body.senate_district==null?null:Number(body.senate_district);
+      if(house!==null&&(!Number.isInteger(house)||house<1||house>105))return json({ok:false,error:'House district must be 1 through 105'},400);
+      if(senate!==null&&(!Number.isInteger(senate)||senate<1||senate>39))return json({ok:false,error:'Senate district must be 1 through 39'},400);
+      await env.DB.prepare(`INSERT INTO user_settings(user_id,house_district,senate_district) VALUES(?1,?2,?3) ON CONFLICT(user_id) DO UPDATE SET house_district=excluded.house_district,senate_district=excluded.senate_district,updated_at=CURRENT_TIMESTAMP`).bind(session.user.id,house,senate).run();
+      return json({ok:true,house_district:house,senate_district:senate});
+    }
+
+    if(url.pathname==='/api/me/delete-account'&&request.method==='DELETE'){
+      const session=await requireSession(env,request);if(!session)return json({ok:false,error:'Authentication required'},401);
+      const body=await request.json().catch(()=>({}));
+      if(body.confirm!=='DELETE')return json({ok:false,error:'Type DELETE to confirm account deletion.'},400);
+      await env.DB.prepare(`DELETE FROM "user" WHERE id=?1`).bind(session.user.id).run();
+      return json({ok:true});
+    }
+
     const apiLegMatch=url.pathname.match(/^\/api\/legislators\/(\d+)\/?$/);
     if(apiLegMatch){const profile=await getLegislator(env,Number(apiLegMatch[1]));return profile?json({ok:true,legislator:profile}):json({ok:false,error:'Legislator not found'},404)}
 
     const session=await getSession(env,request);
     const signedIn=Boolean(session?.user);
+    const userName=session?.user?.name??null;
 
     if(url.pathname==='/login'||url.pathname==='/login/'){
       if(signedIn)return Response.redirect(new URL(safeNext(url.searchParams.get('next')),url.origin).toString(),302);
@@ -166,34 +224,40 @@ export default {
 
     if(url.pathname==='/account'||url.pathname==='/account/'){
       if(!signedIn)return Response.redirect(`${url.origin}/login?next=%2Faccount`,302);
-      const[positions,alignment]=await Promise.all([getUserPositions(env,session.user.id),getAlignment(env,session.user.id)]);
-      return html(renderAccount({user:session.user,positions,alignment}));
+      const[positions,alignment,settings]=await Promise.all([
+        getUserPositions(env,session.user.id),
+        getAlignment(env,session.user.id),
+        getSettings(env,session.user.id)
+      ]);
+      const members=await getYourMembers(env,settings,alignment);
+      const stats=await getDashboardStats(env,session.user.id,positions,members);
+      return html(renderAccount({user:session.user,positions,alignment,settings,members,stats}));
     }
 
-    if(url.pathname==='/'||url.pathname==='')return html(renderHome({recentBills:await getBills(env,'',6),signedIn}));
+    if(url.pathname==='/'||url.pathname==='')return html(renderHome({recentBills:await getBills(env,'',6),signedIn,userName}));
 
-    if(url.pathname==='/bills'||url.pathname==='/bills/'){const query=url.searchParams.get('q')??'';return html(renderBills({bills:await getBills(env,query,150),query,signedIn}))}
+    if(url.pathname==='/bills'||url.pathname==='/bills/'){const query=url.searchParams.get('q')??'';return html(renderBills({bills:await getBills(env,query,150),query,signedIn,userName}))}
 
     const billPageMatch=url.pathname.match(/^\/bills\/([^/]+)\/?$/);
     if(billPageMatch){
-      let instrument;try{instrument=decodeURIComponent(billPageMatch[1]).trim().toUpperCase()}catch{return html(renderNotFound('Invalid bill number.',signedIn),400)}
-      if(!validInstrument(instrument))return html(renderNotFound('Invalid bill number.',signedIn),400);
+      let instrument;try{instrument=decodeURIComponent(billPageMatch[1]).trim().toUpperCase()}catch{return html(renderNotFound('Invalid bill number.',signedIn,userName),400)}
+      if(!validInstrument(instrument))return html(renderNotFound('Invalid bill number.',signedIn,userName),400);
       const bill=await getBillDetail(env,instrument);
       const position=signedIn?await getUserPosition(env,session.user.id,instrument):null;
-      return bill?html(renderBill(bill,{signedIn,position})):html(renderNotFound(`${instrument} was not found.`,signedIn),404);
+      return bill?html(renderBill(bill,{signedIn,position,userName})):html(renderNotFound(`${instrument} was not found.`,signedIn,userName),404);
     }
 
-    if(url.pathname==='/legislators'||url.pathname==='/legislators/')return html(renderLegislators({legislators:await getLegislators(env),signedIn}));
+    if(url.pathname==='/legislators'||url.pathname==='/legislators/')return html(renderLegislators({legislators:await getLegislators(env),signedIn,userName}));
 
     const legPageMatch=url.pathname.match(/^\/legislators\/(\d+)\/?$/);
     if(legPageMatch){
       const id=Number(legPageMatch[1]);const profile=await getLegislator(env,id);
       let alignment=null;
       if(signedIn){const rows=await getAlignment(env,session.user.id);alignment=rows.find(x=>x.legislator_id===id)??null}
-      return profile?html(renderLegislator(profile,{signedIn,alignment})):html(renderNotFound('Legislator not found.',signedIn),404);
+      return profile?html(renderLegislator(profile,{signedIn,alignment,userName})):html(renderNotFound('Legislator not found.',signedIn,userName),404);
     }
 
-    return html(renderNotFound('Not found',signedIn),404);
+    return html(renderNotFound('Not found',signedIn,userName),404);
   },
 
   async scheduled(_controller,env,ctx){if(!env.DB)return;ctx.waitUntil(syncActiveSessions(env.DB))}
