@@ -4,7 +4,7 @@ import { parseBillDetails } from './bill-detail-parser.js';
 export const DETAIL_REFRESH_MINUTES = 30;
 
 function nameTokens(value = '') {
-  return value
+  return String(value)
     .toLowerCase()
     .replace(/["“”']/g, '')
     .replace(/\b(representative|rep|senator|sen)\b\.?/g, '')
@@ -15,41 +15,67 @@ function nameTokens(value = '') {
     .filter(Boolean);
 }
 
-async function resolvePrimaryAuthor(db, chamber, authorText) {
-  if (!authorText) return null;
+function authorMatchScore(row, authorText) {
   const target = nameTokens(authorText);
-  if (target.length < 2) return null;
+  if (target.length < 2) return 0;
 
-  const { results } = await db.prepare(
-    `SELECT id, display_name, is_active
-       FROM legislators
-      WHERE chamber = ?1`
-  ).bind(chamber).all();
+  const display = nameTokens(row.display_name);
+  const first = nameTokens(row.first_name);
+  const last = nameTokens(row.last_name);
 
-  const scored = (results ?? [])
-    .map(r => {
-      const tokens = nameTokens(r.display_name);
-      let score = 0;
+  const targetFirst = target[0];
+  const targetLast = target[target.length - 1];
 
-      if (tokens.join(' ') === target.join(' ')) score = 100;
-      else if (
-        tokens[0] === target[0] &&
-        tokens[tokens.length - 1] === target[target.length - 1]
-      ) score = 80;
-      else if (
-        tokens[tokens.length - 1] === target[target.length - 1] &&
-        tokens.some(t => target.includes(t))
-      ) score = 50;
+  let score = 0;
 
-      if (r.is_active) score += 1;
-      return { ...r, score };
-    })
-    .filter(r => r.score > 0)
-    .sort((a,b) => b.score - a.score);
+  if (display.join(' ') === target.join(' ')) {
+    score = 100;
+  } else if (
+    display.length >= 2 &&
+    display[0] === targetFirst &&
+    display[display.length - 1] === targetLast
+  ) {
+    score = 90;
+  } else if (
+    first.length &&
+    last.length &&
+    first[0] === targetFirst &&
+    last[last.length - 1] === targetLast
+  ) {
+    score = 85;
+  } else if (
+    last.length &&
+    last[last.length - 1] === targetLast &&
+    (first.includes(targetFirst) || display.includes(targetFirst))
+  ) {
+    score = 70;
+  }
+
+  if (score && row.is_active) score += 1;
+  return score;
+}
+
+export function choosePrimaryAuthor(rows, authorText) {
+  const scored = (rows ?? [])
+    .map(row => ({ ...row, score: authorMatchScore(row, authorText) }))
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score);
 
   if (!scored.length) return null;
   if (scored.length > 1 && scored[0].score === scored[1].score) return null;
   return scored[0];
+}
+
+async function resolvePrimaryAuthor(db, chamber, authorText) {
+  if (!authorText) return null;
+
+  const { results } = await db.prepare(
+    `SELECT id, display_name, first_name, last_name, is_active
+       FROM legislators
+      WHERE chamber = ?1`
+  ).bind(chamber).all();
+
+  return choosePrimaryAuthor(results, authorText);
 }
 
 async function committeeIdForShortName(db, shortName) {
@@ -61,11 +87,7 @@ async function committeeIdForShortName(db, shortName) {
 }
 
 function extractActNumber(status, actions) {
-  const candidates = [
-    status,
-    ...actions.map(a => a.official_text)
-  ].filter(Boolean);
-
+  const candidates = [status, ...actions.map(a => a.official_text)].filter(Boolean);
   for (const text of candidates) {
     const m = text.match(/\bAct(?:\s+No\.?)?\s*(\d+)\b/i);
     if (m) return Number(m[1]);
@@ -113,6 +135,7 @@ async function writeDetails(db, bill, details) {
 
   if (details.primary_author_text) {
     const author = await resolvePrimaryAuthor(db, bill.origin_chamber, details.primary_author_text);
+
     if (author) {
       statements.push(
         db.prepare(`DELETE FROM bill_authors WHERE bill_id = ?1 AND author_type = 'PRIMARY'`).bind(bill.id)
@@ -138,6 +161,7 @@ async function writeDetails(db, bill, details) {
 
     for (const event of details.vote_events) {
       const committeeId = await committeeIdForShortName(db, event.committee_short_name);
+
       statements.push(
         db.prepare(
           `INSERT INTO vote_events (
