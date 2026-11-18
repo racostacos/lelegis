@@ -3,21 +3,22 @@ import { parseBillDetails } from './bill-detail-parser.js';
 
 export const DETAIL_REFRESH_MINUTES = 30;
 
-function normalizeName(value = '') {
+function nameTokens(value = '') {
   return value
     .toLowerCase()
     .replace(/["“”']/g, '')
-    .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/g, '')
     .replace(/\b(representative|rep|senator|sen)\b\.?/g, '')
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
 }
 
 async function resolvePrimaryAuthor(db, chamber, authorText) {
   if (!authorText) return null;
-  const target = normalizeName(authorText);
-  if (!target) return null;
+  const target = nameTokens(authorText);
+  if (target.length < 2) return null;
 
   const { results } = await db.prepare(
     `SELECT id, display_name
@@ -25,8 +26,19 @@ async function resolvePrimaryAuthor(db, chamber, authorText) {
       WHERE chamber = ?1 AND is_active = 1`
   ).bind(chamber).all();
 
-  const matches = (results ?? []).filter((r) => normalizeName(r.display_name) === target);
-  return matches.length === 1 ? matches[0] : null;
+  const exact = (results ?? []).filter(
+    (r) => nameTokens(r.display_name).join(' ') === target.join(' ')
+  );
+  if (exact.length === 1) return exact[0];
+
+  const first = target[0];
+  const last = target[target.length - 1];
+  const loose = (results ?? []).filter((r) => {
+    const tokens = nameTokens(r.display_name);
+    return tokens[0] === first && tokens[tokens.length - 1] === last;
+  });
+
+  return loose.length === 1 ? loose[0] : null;
 }
 
 async function committeeIdForShortName(db, shortName) {
@@ -68,23 +80,27 @@ async function writeDetails(db, bill, details) {
     const author = await resolvePrimaryAuthor(db, bill.origin_chamber, details.primary_author_text);
     if (author) {
       statements.push(
+        db.prepare(`DELETE FROM bill_authors WHERE bill_id = ?1 AND author_type = 'PRIMARY'`).bind(bill.id)
+      );
+      statements.push(
         db.prepare(
           `INSERT INTO bill_authors (bill_id, legislator_id, author_type)
-           SELECT ?1, ?2, 'PRIMARY'
-           WHERE NOT EXISTS (
-             SELECT 1 FROM bill_authors
-              WHERE bill_id = ?1 AND author_type = 'PRIMARY'
-           )`
+           VALUES (?1, ?2, 'PRIMARY')`
         ).bind(bill.id, author.id)
       );
     }
   }
 
-  const existingVoteCount = await db.prepare(
-    `SELECT COUNT(*) AS count FROM vote_events WHERE bill_id = ?1`
+  const memberVoteCount = await db.prepare(
+    `SELECT COUNT(*) AS count
+       FROM legislator_votes lv
+       JOIN vote_events ve ON ve.id = lv.vote_event_id
+      WHERE ve.bill_id = ?1`
   ).bind(bill.id).first();
 
-  if (Number(existingVoteCount?.count ?? 0) === 0) {
+  if (Number(memberVoteCount?.count ?? 0) === 0) {
+    statements.push(db.prepare(`DELETE FROM vote_events WHERE bill_id = ?1`).bind(bill.id));
+
     for (const event of details.vote_events) {
       const committeeId = await committeeIdForShortName(db, event.committee_short_name);
       statements.push(
@@ -116,8 +132,11 @@ async function writeDetails(db, bill, details) {
 
   statements.push(
     db.prepare(
-      `UPDATE bills SET detail_synced_at = CURRENT_TIMESTAMP WHERE id = ?1`
-    ).bind(bill.id)
+      `UPDATE bills
+          SET detail_synced_at = CASE WHEN ?2 > 0 THEN CURRENT_TIMESTAMP ELSE NULL END,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?1`
+    ).bind(bill.id, details.actions.length)
   );
 
   if (statements.length) await db.batch(statements);
