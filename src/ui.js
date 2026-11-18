@@ -234,12 +234,12 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
      <section class="bill-section" id="cast-vote">
        <h2 class="bill-section-title">Cast your vote</h2>
        <div class="vote-choice-grid">
-         <button type="button" class="vote-choice ${position==='YES'?'selected':''}" data-save-vote="YES">
+         <a class="vote-choice ${position==='YES'?'selected':''}" href="/vote/${encodeURIComponent(bill.instrument)}/YES" style="text-decoration:none">
            <span class="overline">Your read</span><strong>Vote Yes</strong><span>Back the bill</span>
-         </button>
-         <button type="button" class="vote-choice no ${position==='NO'?'selected':''}" data-save-vote="NO">
+         </a>
+         <a class="vote-choice no ${position==='NO'?'selected':''}" href="/vote/${encodeURIComponent(bill.instrument)}/NO" style="text-decoration:none">
            <span class="overline">Your read</span><strong>Vote No</strong><span>Block the bill</span>
-         </button>
+         </a>
        </div>
        <div class="community-box">
          <div class="community-head"><strong>Community</strong><span class="muted"><span id="yes-percent">${esc(community.yes_percent??0)}</span>% yes · <span id="community-total">${esc(community.total??0)}</span> votes</span></div>
@@ -288,58 +288,12 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
 const signedIn=${signedIn?'true':'false'};
 const instrument=${JSON.stringify(bill.instrument)};
 
-document.querySelectorAll('[data-save-vote]').forEach(button=>{
-  button.addEventListener('click',async()=>{
-    const position=button.dataset.saveVote;
-
-    if(!signedIn){
-      location.href='/login?next='+encodeURIComponent('/bills/'+instrument);
-      return;
-    }
-
-    button.disabled=true;
-
-    try{
-      const response=await fetch('/api/me/positions/'+encodeURIComponent(instrument),{
-        method:'PUT',
-        headers:{'content-type':'application/json'},
-        body:JSON.stringify({position})
-      });
-
-      let data={};
-      try{data=await response.json()}catch{}
-
-      if(!response.ok){
-        alert(data.error||('Could not save vote ('+response.status+').'));
-        button.disabled=false;
-        return;
-      }
-
-      location.href='/bills/'+encodeURIComponent(instrument)+'#cast-vote';
-    }catch(error){
-      alert('Could not save vote. Please try again.');
-      button.disabled=false;
-    }
-  });
-});
-
 document.getElementById('share-bill')?.addEventListener('click',async()=>{
   try{
     if(navigator.share) await navigator.share({title:document.title,url:location.href});
     else { await navigator.clipboard.writeText(location.href); alert('Bill link copied.'); }
   }catch{}
 });
-
-async function saveVote(position){
-  if(!signedIn){ location.href='/login?next='+encodeURIComponent('/bills/'+instrument); return; }
-  const r=await fetch('/api/me/positions/'+encodeURIComponent(instrument),{
-    method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({position})
-  });
-  const data=await r.json();
-  if(!r.ok){ alert(data.error||'Could not save vote.'); return; }
-  location.reload();
-}
-document.querySelectorAll('[data-position]').forEach(x=>x.addEventListener('click',()=>saveVote(x.dataset.position)));
 
 document.getElementById('post-comment')?.addEventListener('click',async()=>{
   const body=document.getElementById('comment-body').value.trim();

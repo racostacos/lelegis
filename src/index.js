@@ -1238,6 +1238,63 @@ export default {
       catch(err){return json({ok:false,error:'Failed to load bill',detail:String(err?.message??err)},500)}
     }
 
+    const voteLinkMatch=url.pathname.match(/^\/vote\/([^/]+)\/(YES|NO)\/?$/);
+    if(voteLinkMatch&&request.method==='GET'){
+      try{
+        const instrument=decodeURIComponent(voteLinkMatch[1]).trim().toUpperCase();
+        const position=String(voteLinkMatch[2]).toUpperCase();
+
+        if(!validInstrument(instrument)){
+          return html(renderNotFound('Invalid bill number.',false,null),400);
+        }
+
+        const session=await requireSession(env,request);
+        if(!session){
+          return new Response(null,{
+            status:303,
+            headers:{location:`/login?next=${encodeURIComponent(`/bills/${instrument}#cast-vote`)}`}
+          });
+        }
+
+        const billId=await latestBillId(env,instrument);
+        if(!billId){
+          return html(renderNotFound(`${instrument} was not found.`,true,session.user?.name??null),404);
+        }
+
+        const existing=await env.DB.prepare(
+          `SELECT id FROM user_bill_positions WHERE user_id=?1 AND bill_id=?2 LIMIT 1`
+        ).bind(session.user.id,billId).first();
+
+        if(existing?.id){
+          await env.DB.prepare(
+            `UPDATE user_bill_positions
+                SET position=?1,updated_at=CURRENT_TIMESTAMP
+              WHERE id=?2`
+          ).bind(position,existing.id).run();
+        }else{
+          await env.DB.prepare(
+            `INSERT INTO user_bill_positions(user_id,bill_id,position)
+             VALUES(?1,?2,?3)`
+          ).bind(session.user.id,billId,position).run();
+        }
+
+        return new Response(null,{
+          status:303,
+          headers:{location:`/bills/${encodeURIComponent(instrument)}#cast-vote`}
+        });
+      }catch(err){
+        return html(
+          `<!doctype html><meta charset="utf-8"><title>Vote error</title>
+           <body style="font-family:system-ui;padding:32px">
+           <h1>Could not save vote</h1>
+           <p>${String(err?.message??err).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')}</p>
+           <p><a href="/bills">Back to bills</a></p>
+           </body>`,
+          500
+        );
+      }
+    }
+
     const posApi=url.pathname.match(/^\/api\/me\/positions\/([^/]+)\/?$/);
     if(posApi){
       const session=await requireSession(env,request);if(!session)return json({ok:false,error:'Authentication required'},401);
