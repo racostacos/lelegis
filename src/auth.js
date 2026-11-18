@@ -4,10 +4,28 @@ import { importPKCS8, SignJWT } from 'jose';
 const BASE_URL = 'https://legis.le-comrade.org';
 
 const cleanPrivateKey = value =>
-  String(value ?? '').replaceAll('\\n', '\n').trim();
+  String(value ?? '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replaceAll('\\n', '\n')
+    .trim();
+
+const hasValidApplePrivateKeyShape = value => {
+  const key = cleanPrivateKey(value);
+  return key.startsWith('-----BEGIN PRIVATE KEY-----') &&
+         key.endsWith('-----END PRIVATE KEY-----');
+};
 
 async function appleClientSecret(env) {
-  const key = await importPKCS8(cleanPrivateKey(env.APPLE_PRIVATE_KEY), 'ES256');
+  const privateKey = cleanPrivateKey(env.APPLE_PRIVATE_KEY);
+
+  if (!hasValidApplePrivateKeyShape(privateKey)) {
+    throw new Error(
+      'APPLE_PRIVATE_KEY must be the complete Apple .p8 file, including BEGIN PRIVATE KEY and END PRIVATE KEY lines'
+    );
+  }
+
+  const key = await importPKCS8(privateKey, 'ES256');
   const now = Math.floor(Date.now() / 1000);
 
   return new SignJWT({})
@@ -26,7 +44,7 @@ export const authProviders = env => ({
     env.APPLE_CLIENT_ID &&
     env.APPLE_TEAM_ID &&
     env.APPLE_KEY_ID &&
-    env.APPLE_PRIVATE_KEY
+    hasValidApplePrivateKeyShape(env.APPLE_PRIVATE_KEY)
   )
 });
 
@@ -45,6 +63,9 @@ export async function createAuth(env) {
     };
   }
 
+  // Critically, do not even register Apple unless the private key has
+  // the correct PKCS#8 .p8 shape. This prevents a broken Apple secret
+  // from breaking Google/session initialization.
   if (providers.apple) {
     socialProviders.apple = async () => ({
       clientId: env.APPLE_CLIENT_ID,
@@ -83,8 +104,13 @@ export async function getSession(env, request) {
 
 export async function beginSocialSignIn(env, request, provider, callbackURL = '/account') {
   const providers = authProviders(env);
+
   if (!providers[provider]) {
-    return new Response(`${provider} sign-in is not configured.`, { status:503 });
+    const detail = provider === 'apple'
+      ? 'Apple sign-in is not configured with a valid Apple .p8 private key.'
+      : `${provider} sign-in is not configured.`;
+
+    return new Response(detail, { status:503 });
   }
 
   const auth = await createAuth(env);
