@@ -37,11 +37,18 @@ const getBills=async(env,query='',limit=100)=>{
   const like=`%${q}%`;const{results}=await env.DB.prepare(`SELECT b.id,b.instrument,b.origin_chamber,b.subject,b.official_description,b.official_status,b.normalized_status,b.act_number,b.effective_date FROM bills b JOIN sessions s ON s.id=b.session_id WHERE b.instrument LIKE ?1 OR b.subject LIKE ?1 OR b.official_description LIKE ?1 OR b.official_status LIKE ?1 ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC LIMIT ?2`).bind(like,limit).all();return results
 };
 
-async function getHomeBills(env,{userId=null,myVote='all',repVote='all',limit=6}={}){
+async function getPersonalizedBills(env,{
+  query='',
+  userId=null,
+  myVote='all',
+  repVote='all',
+  limit=150
+}={}){
   const validMyVote=new Set(['all','voted','not-voted']);
   const validRepVote=new Set(['all','voted','not-voted']);
   const userFilter=validMyVote.has(myVote)?myVote:'all';
   const repFilter=validRepVote.has(repVote)?repVote:'all';
+  const q=String(query??'').trim();
 
   let representativeId=null;
 
@@ -63,10 +70,16 @@ async function getHomeBills(env,{userId=null,myVote='all',repVote='all',limit=6}
     }
   }
 
-  // Fetch a meaningful recent pool first, then apply the personalized filters.
-  // This avoids filtering only the six cards that would otherwise be displayed.
-  const {results}=await env.DB.prepare(
-    `SELECT
+  const where=q
+    ? `WHERE (
+         b.instrument LIKE ?3 OR
+         b.subject LIKE ?3 OR
+         b.official_description LIKE ?3 OR
+         b.official_status LIKE ?3
+       )`
+    : '';
+
+  const sql=`SELECT
        b.id,
        b.instrument,
        b.origin_chamber,
@@ -94,11 +107,56 @@ async function getHomeBills(env,{userId=null,myVote='all',repVote='all',limit=6}
        ) AS representative_voted
      FROM bills b
      JOIN sessions s ON s.id=b.session_id
+     ${where}
      ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC
-     LIMIT 120`
-  ).bind(userId??'',representativeId??-1).all();
+     LIMIT ?4`;
 
-  const filtered=(results??[]).filter(row=>{
+  const stmt=env.DB.prepare(sql);
+
+  const result=q
+    ? await stmt.bind(userId??'',representativeId??-1,`%${q}%`,Math.max(limit,300)).all()
+    : await stmt.bind(userId??'',representativeId??-1,Math.max(limit,300),Math.max(limit,300)).all();
+
+  // The no-query SQL uses ?4, so bind positions must still exist. Re-run with a
+  // query-neutral placeholder when q is empty.
+  let rows=result.results??[];
+
+  if(!q){
+    const noQuerySql=`SELECT
+       b.id,
+       b.instrument,
+       b.origin_chamber,
+       b.subject,
+       b.official_description,
+       b.official_status,
+       b.normalized_status,
+       b.act_number,
+       b.effective_date,
+       EXISTS(
+         SELECT 1 FROM user_bill_positions ubp
+          WHERE ubp.bill_id=b.id AND ubp.user_id=?1
+       ) AS user_voted,
+       EXISTS(
+         SELECT 1
+           FROM legislator_votes lv
+           JOIN vote_events ve ON ve.id=lv.vote_event_id
+          WHERE lv.legislator_id=?2
+            AND ve.bill_id=b.id
+            AND ve.chamber='HOUSE'
+            AND ve.event_type='FLOOR'
+            AND lv.vote IN ('YEA','NAY')
+       ) AS representative_voted
+     FROM bills b
+     JOIN sessions s ON s.id=b.session_id
+     ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC
+     LIMIT ?3`;
+
+    rows=(await env.DB.prepare(noQuerySql)
+      .bind(userId??'',representativeId??-1,Math.max(limit,300))
+      .all()).results??[];
+  }
+
+  const filtered=rows.filter(row=>{
     const userVoted=Boolean(row.user_voted);
     const representativeVoted=Boolean(row.representative_voted);
 
@@ -1334,34 +1392,42 @@ export default {
     }
 
     if(url.pathname==='/'||url.pathname===''){
+      return html(renderHome({
+        recentBills:await getBills(env,'',6),
+        signedIn,
+        userName
+      }));
+    }
+    if(url.pathname==='/bills'||url.pathname==='/bills/'){
+      const query=url.searchParams.get('q')??'';
       const myVote=url.searchParams.get('myVote')??'all';
       const repVote=url.searchParams.get('repVote')??'all';
 
-      const homeData=signedIn
-        ? await getHomeBills(env,{
+      const billData=signedIn
+        ? await getPersonalizedBills(env,{
+            query,
             userId:session.user.id,
             myVote,
             repVote,
-            limit:6
+            limit:150
           })
         : {
-            bills:await getBills(env,'',6),
+            bills:await getBills(env,query,150),
             myVote:'all',
             repVote:'all',
             representativeAvailable:false
           };
 
-      return html(renderHome({
-        recentBills:homeData.bills,
+      return html(renderBills({
+        bills:billData.bills,
+        query,
         signedIn,
         userName,
-        myVote:homeData.myVote,
-        repVote:homeData.repVote,
-        representativeAvailable:homeData.representativeAvailable
+        myVote:billData.myVote,
+        repVote:billData.repVote,
+        representativeAvailable:billData.representativeAvailable
       }));
     }
-
-    if(url.pathname==='/bills'||url.pathname==='/bills/'){const query=url.searchParams.get('q')??'';return html(renderBills({bills:await getBills(env,query,150),query,signedIn,userName}))}
 
     const billPageMatch=url.pathname.match(/^\/bills\/([^/]+)\/?$/);
     if(billPageMatch){
