@@ -111,7 +111,7 @@ function absoluteUrl(href, baseUrl) {
   }
 }
 
-function findMemberAnchors(html, chamber) {
+function findSeatAnchors(html, chamber) {
   const anchorRe = /<a\b([^>]*?)href\s*=\s*(["'])(.*?)\2([^>]*)>([\s\S]*?)<\/a>/gi;
   const matches = [];
   let match;
@@ -121,28 +121,40 @@ function findMemberAnchors(html, chamber) {
     const href = decodeEntities(match[3]);
     const name = stripHtml(match[5]);
     if (!profileNeedle.test(href)) continue;
-    if (!name || !name.includes(',')) continue;
-    matches.push({ index: match.index, end: anchorRe.lastIndex, href, name });
+    if (!name) continue;
+    const isVacant = /^Vacant\s*-\s*District\s+\d+$/i.test(name);
+    if (!isVacant && !name.includes(',')) continue;
+    matches.push({ index: match.index, end: anchorRe.lastIndex, href, name, isVacant });
   }
   return matches;
 }
 
-function parseBlock(blockHtml, chamber, baseUrl, anchor) {
+function parseSeatBlock(blockHtml, chamber, baseUrl, anchor) {
   const text = stripHtml(blockHtml).replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
   const districtMatch = text.match(/\bDistrict\s*#?\s*(\d{1,3})\b/i);
-  const partyMatch = text.match(/\b(Republican|Democrat|Independent)\b/i);
-  const emailMatch = text.match(EMAIL_RE);
-  const phoneMatch = text.match(PHONE_RE);
-
-  if (!districtMatch || !partyMatch) return null;
+  if (!districtMatch) return null;
 
   const districtNumber = Number(districtMatch[1]);
+  if (anchor.isVacant) {
+    return {
+      chamber,
+      district_number: districtNumber,
+      vacant: true,
+      profile_url: absoluteUrl(anchor.href, baseUrl)
+    };
+  }
+
+  const partyMatch = text.match(/\b(Republican|Democrat|Independent)\b/i);
+  if (!partyMatch) return null;
+
+  const emailMatch = text.match(EMAIL_RE);
+  const phoneMatch = text.match(PHONE_RE);
   const party = normalizeParty(partyMatch[1]);
   const email = emailMatch ? emailMatch[0].toLowerCase() : null;
   const phone = phoneMatch ? normalizePhone(phoneMatch[0]) : null;
 
   let officeAddress = null;
-  if (partyMatch && phoneMatch) {
+  if (phoneMatch) {
     const start = partyMatch.index + partyMatch[0].length;
     const end = phoneMatch.index;
     if (end > start) {
@@ -168,44 +180,48 @@ function parseBlock(blockHtml, chamber, baseUrl, anchor) {
     office_address: officeAddress,
     photo_url: null,
     profile_url: absoluteUrl(anchor.href, baseUrl),
-    is_active: 1
+    is_active: 1,
+    vacant: false
   };
 }
 
 export function parseLegislatorListing(html, { chamber, baseUrl }) {
   if (!['HOUSE', 'SENATE'].includes(chamber)) throw new Error(`Unsupported chamber: ${chamber}`);
-  const anchors = findMemberAnchors(html, chamber);
-  const members = [];
+  const anchors = findSeatAnchors(html, chamber);
+  const seats = [];
 
   for (let i = 0; i < anchors.length; i += 1) {
     const current = anchors[i];
     const next = anchors[i + 1];
     const blockEnd = next ? next.index : Math.min(html.length, current.end + 5000);
     const block = html.slice(current.index, blockEnd);
-    const member = parseBlock(block, chamber, baseUrl, current);
-    if (member) members.push(member);
+    const seat = parseSeatBlock(block, chamber, baseUrl, current);
+    if (seat) seats.push(seat);
   }
 
-  return members;
+  return seats;
 }
 
-export function validateLegislators(houseMembers, senateMembers) {
+export function validateLegislators(houseSeats, senateSeats) {
   const errors = [];
 
-  function validateChamber(members, chamber, expectedCount, maxDistrict) {
-    if (members.length !== expectedCount) {
-      errors.push(`${chamber}: expected ${expectedCount} members, found ${members.length}`);
+  function validateChamber(seats, chamber, expectedSeats, maxDistrict) {
+    if (seats.length !== expectedSeats) {
+      errors.push(`${chamber}: expected ${expectedSeats} seats, found ${seats.length}`);
     }
 
     const seen = new Map();
-    for (const member of members) {
-      const key = `${member.chamber}:${member.district_number}`;
-      seen.set(member.district_number, (seen.get(member.district_number) ?? 0) + 1);
-      if (member.chamber !== chamber) errors.push(`${key}: wrong chamber`);
-      if (!member.display_name) errors.push(`${key}: missing display_name`);
-      if (!member.party) errors.push(`${key}: missing party`);
-      if (!member.profile_url) errors.push(`${key}: missing profile_url`);
-      if (!member.last_name) errors.push(`${key}: missing last_name`);
+    for (const seat of seats) {
+      const key = `${seat.chamber}:${seat.district_number}`;
+      seen.set(seat.district_number, (seen.get(seat.district_number) ?? 0) + 1);
+      if (seat.chamber !== chamber) errors.push(`${key}: wrong chamber`);
+
+      if (!seat.vacant) {
+        if (!seat.display_name) errors.push(`${key}: missing display_name`);
+        if (!seat.party) errors.push(`${key}: missing party`);
+        if (!seat.profile_url) errors.push(`${key}: missing profile_url`);
+        if (!seat.last_name) errors.push(`${key}: missing last_name`);
+      }
     }
 
     for (let district = 1; district <= maxDistrict; district += 1) {
@@ -215,8 +231,8 @@ export function validateLegislators(houseMembers, senateMembers) {
     }
   }
 
-  validateChamber(houseMembers, 'HOUSE', 105, 105);
-  validateChamber(senateMembers, 'SENATE', 39, 39);
+  validateChamber(houseSeats, 'HOUSE', 105, 105);
+  validateChamber(senateSeats, 'SENATE', 39, 39);
 
   if (errors.length) {
     const error = new Error(`Legislator validation failed:\n${errors.map((e) => `- ${e}`).join('\n')}`);
@@ -224,5 +240,18 @@ export function validateLegislators(houseMembers, senateMembers) {
     throw error;
   }
 
-  return { house: 105, senate: 39, total: 144 };
+  const houseVacancies = houseSeats.filter((s) => s.vacant).length;
+  const senateVacancies = senateSeats.filter((s) => s.vacant).length;
+
+  return {
+    houseSeats: 105,
+    senateSeats: 39,
+    totalSeats: 144,
+    houseLegislators: 105 - houseVacancies,
+    senateLegislators: 39 - senateVacancies,
+    totalLegislators: 144 - houseVacancies - senateVacancies,
+    houseVacancies,
+    senateVacancies,
+    totalVacancies: houseVacancies + senateVacancies
+  };
 }
