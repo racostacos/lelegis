@@ -71,7 +71,7 @@ export function renderBills({bills=[],query='',signedIn=false,userName=null}){
  return page({title:query?`Bills matching ${query}`:'Bills',active:'bills',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="eyebrow">Bill tracker</div><h1>Bills</h1><form class="search" action="/bills" method="get"><input name="q" value="${esc(query)}" placeholder="Search bill number, subject, description or status"><button>Search</button></form></section><section style="margin-top:22px" class="stack">${cards||'<div class="empty">No matching bills.</div>'}</section></main>`});
 }
 
-export function renderBill(bill,{signedIn=false,position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0,summaryText=null,summarySources=[]}={}){
+export function renderBill(bill,{signedIn=false,position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0,summaryText=null,summarySources=[],representativeComparison=null}={}){
  const stages=['Introduced','In Committee','On the Floor','Passed House','Passed Senate','Signed'];
  const latest=(bill.actions??[]).at(-1);
  const introduced=(bill.actions??[])[0]?.action_date??bill.created_at?.slice?.(0,10)??'';
@@ -154,6 +154,20 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
          <div class="community-head"><strong>Community</strong><span class="muted"><span id="yes-percent">${esc(community.yes_percent??0)}</span>% yes · <span id="community-total">${esc(community.total??0)}</span> votes</span></div>
          <div class="community-bar"><div class="community-yes" id="community-bar" style="width:${esc(community.yes_percent??0)}%"></div></div>
          <div class="community-totals"><span>YES <span id="yes-count">${esc(community.yes??0)}</span></span><span>NO <span id="no-count">${esc(community.no??0)}</span></span></div>
+         ${representativeComparison?`
+           <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+             <div class="overline" style="margin-bottom:5px">Your representative</div>
+             <div style="font-weight:800;font-size:1rem;line-height:1.35">
+               Rep. ${esc(representativeComparison.last_name||representativeComparison.display_name)}
+               ${representativeComparison.matched?'matched':'broke from'} your position.
+             </div>
+             <div class="muted" style="margin-top:3px">
+               You voted ${esc(representativeComparison.user_position)}.
+               Rep. ${esc(representativeComparison.last_name||representativeComparison.display_name)}
+               voted ${esc(representativeComparison.representative_position)}.
+             </div>
+           </div>
+         `:''}
        </div>
        ${!signedIn?`<p class="small muted" style="margin-top:14px">Sign in to save your vote and compare it with Louisiana lawmakers.</p>`:''}
      </section>

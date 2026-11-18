@@ -359,6 +359,73 @@ async function getBillCommunity(env,billId,userId=null){
   };
 }
 
+async function getBillRepresentativeComparison(env,userId,billId,userPosition){
+  if(!userId||!userPosition) return null;
+
+  const settings=await getSettings(env,userId);
+  const district=Number(settings?.house_district??0);
+  if(!district) return null;
+
+  const member=await env.DB.prepare(
+    `SELECT id,display_name,last_name,district_number
+       FROM legislators
+      WHERE is_active=1
+        AND chamber='HOUSE'
+        AND district_number=?1
+      LIMIT 1`
+  ).bind(district).first();
+
+  if(!member) return null;
+
+  const {results}=await env.DB.prepare(
+    `SELECT
+       lv.vote,
+       ve.id AS vote_event_id,
+       ve.motion,
+       ve.vote_date,
+       ve.vote_time
+     FROM legislator_votes lv
+     JOIN vote_events ve ON ve.id=lv.vote_event_id
+     WHERE lv.legislator_id=?1
+       AND ve.bill_id=?2
+       AND ve.chamber='HOUSE'
+       AND ve.event_type='FLOOR'
+       AND lv.vote IN ('YEA','NAY')`
+  ).bind(member.id,billId).all();
+
+  if(!results.length) return null;
+
+  const comparable=results
+    .map(row=>({
+      ...row,
+      priority:comparisonPriority(row.motion),
+      dateKey:`${row.vote_date??''}T${row.vote_time??''}`
+    }))
+    .filter(row=>row.priority>0)
+    .sort((a,b)=>
+      b.priority-a.priority ||
+      String(b.dateKey).localeCompare(String(a.dateKey)) ||
+      Number(b.vote_event_id)-Number(a.vote_event_id)
+    );
+
+  const chosen=comparable[0];
+  if(!chosen) return null;
+
+  const memberPosition=chosen.vote==='YEA'?'YES':'NO';
+
+  return {
+    legislator_id:member.id,
+    display_name:member.display_name,
+    last_name:member.last_name,
+    district_number:member.district_number,
+    user_position:userPosition,
+    representative_position:memberPosition,
+    matched:userPosition===memberPosition,
+    motion:chosen.motion,
+    vote_date:chosen.vote_date
+  };
+}
+
 async function getBillComments(env,billId,userId=null,sort='top'){
   const order=sort==='new'
     ? 'uc.created_at DESC, uc.id DESC'
@@ -1193,14 +1260,23 @@ export default {
       const bill=await getBillDetail(env,instrument);
       if(!bill)return html(renderNotFound(`${instrument} was not found.`,signedIn,userName),404);
 
-      const [community,commentData,summaryData]=await Promise.all([
-        getBillCommunity(env,bill.id,signedIn?session.user.id:null),
+      const community=await getBillCommunity(env,bill.id,signedIn?session.user.id:null);
+
+      const [commentData,summaryData,representativeComparison]=await Promise.all([
         getBillComments(env,bill.id,signedIn?session.user.id:null,'top'),
         ensureBillSummary(env,bill).catch(()=>({
           text:bill.official_description||'No summary is currently available.',
           sources:[],
           generated:false
-        }))
+        })),
+        signedIn
+          ? getBillRepresentativeComparison(
+              env,
+              session.user.id,
+              bill.id,
+              community.user_position
+            ).catch(()=>null)
+          : Promise.resolve(null)
       ]);
 
       return html(renderBill(bill,{
@@ -1212,7 +1288,8 @@ export default {
         commentCount:commentData.count,
         stage:billStage(bill),
         summaryText:summaryData.text,
-        summarySources:summaryData.sources
+        summarySources:summaryData.sources,
+        representativeComparison
       }));
     }
 
