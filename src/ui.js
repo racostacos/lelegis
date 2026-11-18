@@ -234,12 +234,16 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
      <section class="bill-section" id="cast-vote">
        <h2 class="bill-section-title">Cast your vote</h2>
        <div class="vote-choice-grid">
-         <button class="vote-choice ${position==='YES'?'selected':''}" data-position="YES">
-           <span class="overline">Your read</span><strong>Vote Yes</strong><span>Back the bill</span>
-         </button>
-         <button class="vote-choice no ${position==='NO'?'selected':''}" data-position="NO">
-           <span class="overline">Your read</span><strong>Vote No</strong><span>Block the bill</span>
-         </button>
+         <form method="post" action="/vote/${encodeURIComponent(bill.instrument)}" style="display:contents">
+           <button type="submit" name="position" value="YES" class="vote-choice ${position==='YES'?'selected':''}">
+             <span class="overline">Your read</span><strong>Vote Yes</strong><span>Back the bill</span>
+           </button>
+         </form>
+         <form method="post" action="/vote/${encodeURIComponent(bill.instrument)}" style="display:contents">
+           <button type="submit" name="position" value="NO" class="vote-choice no ${position==='NO'?'selected':''}">
+             <span class="overline">Your read</span><strong>Vote No</strong><span>Block the bill</span>
+           </button>
+         </form>
        </div>
        <div class="community-box">
          <div class="community-head"><strong>Community</strong><span class="muted"><span id="yes-percent">${esc(community.yes_percent??0)}</span>% yes · <span id="community-total">${esc(community.total??0)}</span> votes</span></div>
