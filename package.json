@@ -11,7 +11,8 @@
     "test:legislators": "node --test tests/legislators.test.js",
     "sync:bills": "node scripts/import-bills.js",
     "test:bills": "node --test tests/bills.test.js",
-    "test:bill-sync": "node --test tests/bill-sync.test.js"
+    "test:bill-sync": "node --test tests/bill-sync.test.js",
+    "test:bill-detail": "node --test tests/bill-detail.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

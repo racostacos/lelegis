@@ -1,3 +1,4 @@
+import { refreshBillDetailsForRequest } from './lib/bill-detail-sync.js';
 import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 
 const json = (data, status = 200) =>
@@ -166,6 +167,7 @@ export default {
 
       try {
         await refreshBillForRequest(env.DB, instrument);
+        await refreshBillDetailsForRequest(env.DB, instrument);
         const bill = await getBillDetail(env, instrument);
         if (!bill) return json({ ok: false, error: 'Bill not found', instrument }, 404);
         return json({ ok: true, bill });
