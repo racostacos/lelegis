@@ -479,19 +479,115 @@ function summaryDocumentScore(title=''){
 }
 
 function chooseSummaryDocuments(html=''){
-  const found=[];
-  const anchorRe=/<a\b[^>]*href=["']([^"']*ViewDocument\.aspx\?[^"']*d=\d+[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const source=String(html);
+  const candidates=[];
+
+  // 1. Normal anchors where the document title is inside the <a>.
+  const anchorRe=/<a\b[^>]*(?:href|onclick)=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
-  while((m=anchorRe.exec(html))){
+  while((m=anchorRe.exec(source))){
+    const attr=decodeEntities(m[1]);
     const title=cleanAnchorText(m[2]);
-    const url=canonicalDocumentUrl(m[1]);
-    if(!title||!url) continue;
+    const idMatch=attr.match(/ViewDocument\.aspx\?[^"'<>]*\bd=(\d+)/i)
+      || attr.match(/\bd=(\d+)\b/i);
+
+    if(!idMatch) continue;
+
+    const id=Number(idMatch[1]);
+    const url=`https://legis.la.gov/Legis/ViewDocument.aspx?d=${id}`;
     const score=summaryDocumentScore(title);
-    if(!score) continue;
-    found.push({title,url,score,id:documentId(url)});
+    if(score) candidates.push({title,url,score,id});
   }
 
-  const deduped=[...new Map(found.map(x=>[x.url,x])).values()];
+  // 2. ASP.NET sometimes puts the URL in JavaScript/markup separate from
+  // the visible title. Find every ViewDocument ID and classify from nearby text.
+  const docRe=/ViewDocument\.aspx\?[^"'<>\\s]*?\bd=(\d+)/gi;
+  while((m=docRe.exec(source))){
+    const id=Number(m[1]);
+    const start=Math.max(0,m.index-900);
+    const end=Math.min(source.length,m.index+1400);
+    const nearby=cleanAnchorText(source.slice(start,end));
+
+    const knownPatterns=[
+      /Resume Digest for\s+[A-Z]{1,4}\s*\d+/i,
+      /Summary of (?:House|Senate) Amendments to\s+[A-Z]{1,4}\s*\d+/i,
+      /Conference Committee Report[^|<]*/i,
+      /[A-Z]{1,4}\s*\d+\s+Veto Message/i,
+      /Veto Message/i,
+      /Fiscal Note[^|<]*/i,
+      /Digest of\s+[A-Z]{1,4}\s*\d+\s+(?:Engrossed|Reengrossed|Original|Enrolled)/i,
+      /Digest of\s+[A-Z]{1,4}\s*\d+/i,
+      /(?:House|Senate) (?:Floor|Committee) Amendment[^|<]*(?:Adopted|Draft)?/i
+    ];
+
+    let title='';
+    let score=0;
+    for(const re of knownPatterns){
+      const hit=nearby.match(re);
+      if(hit){
+        const candidate=hit[0].replace(/\s+/g,' ').trim();
+        const candidateScore=summaryDocumentScore(candidate);
+        if(candidateScore>score){
+          title=candidate;
+          score=candidateScore;
+        }
+      }
+    }
+
+    if(score){
+      candidates.push({
+        title,
+        url:`https://legis.la.gov/Legis/ViewDocument.aspx?d=${id}`,
+        score,
+        id
+      });
+    }
+  }
+
+  // 3. Last fallback: pair known visible labels with the nearest document ID
+  // in the surrounding raw markup.
+  const labels=[
+    ['Resume Digest',100],
+    ['Summary of Senate Amendments',95],
+    ['Summary of House Amendments',95],
+    ['Conference Committee Report',92],
+    ['Veto Message',90],
+    ['Fiscal Note',85],
+    ['Digest of',80]
+  ];
+
+  for(const [label,score] of labels){
+    let pos=0;
+    while((pos=source.toLowerCase().indexOf(label.toLowerCase(),pos))!==-1){
+      const start=Math.max(0,pos-1800);
+      const end=Math.min(source.length,pos+1800);
+      const window=source.slice(start,end);
+      const ids=[...window.matchAll(/(?:ViewDocument\.aspx\?[^"'<>\\s]*?\bd=|\bd=)(\d+)/gi)]
+        .map(x=>Number(x[1]))
+        .filter(Boolean);
+
+      if(ids.length){
+        // Prefer the closest visible ViewDocument reference in this small window.
+        const id=ids[Math.floor(ids.length/2)];
+        const titleWindow=cleanAnchorText(source.slice(pos,Math.min(source.length,pos+180)));
+        const title=titleWindow.split(/\s{2,}/)[0]||label;
+        candidates.push({
+          title,
+          url:`https://legis.la.gov/Legis/ViewDocument.aspx?d=${id}`,
+          score,
+          id
+        });
+      }
+      pos+=label.length;
+    }
+  }
+
+  const deduped=[...new Map(
+    candidates
+      .sort((a,b)=>b.score-a.score||b.id-a.id)
+      .map(x=>[x.url,x])
+  ).values()];
+
   const by=(predicate)=>deduped
     .filter(predicate)
     .sort((a,b)=>b.score-a.score||b.id-a.id);
@@ -510,15 +606,14 @@ function chooseSummaryDocuments(html=''){
   add(digests.find(x=>/original/i.test(x.title)));
 
   if(chosen.length<4){
-    for(const doc of deduped.sort((a,b)=>b.score-a.score||b.id-a.id)){
+    for(const doc of deduped){
       add(doc);
-      if(chosen.length>=6) break;
+      if(chosen.length>=7) break;
     }
   }
 
   return chosen.slice(0,7).map(({title,url})=>({title,url}));
 }
-
 async function summarySourceSignature(bill,documents){
   const payload=JSON.stringify({
     bill_id:bill.id,
