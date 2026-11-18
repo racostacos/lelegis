@@ -427,6 +427,364 @@ function billStage(bill){
   return 0;
 }
 
+
+const SUMMARY_MODEL='@cf/google/gemma-4-26b-a4b-it';
+
+function decodeEntities(value=''){
+  return String(value)
+    .replaceAll('&amp;','&')
+    .replaceAll('&quot;','"')
+    .replaceAll('&#39;',"'")
+    .replaceAll('&lt;','<')
+    .replaceAll('&gt;','>')
+    .replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi,(_,n)=>String.fromCharCode(parseInt(n,16)));
+}
+
+function cleanAnchorText(value=''){
+  return decodeEntities(String(value)
+    .replace(/<[^>]+>/g,' ')
+    .replace(/\s+/g,' ')
+    .trim());
+}
+
+function canonicalDocumentUrl(href=''){
+  try{
+    const url=new URL(decodeEntities(href),'https://legis.la.gov/');
+    const d=url.searchParams.get('d');
+    if(/ViewDocument\.aspx$/i.test(url.pathname)&&/^\d+$/.test(d??'')){
+      return `https://legis.la.gov/Legis/ViewDocument.aspx?d=${d}`;
+    }
+    return url.toString();
+  }catch{
+    return null;
+  }
+}
+
+function documentId(url=''){
+  try{return Number(new URL(url).searchParams.get('d')??0)}
+  catch{return 0}
+}
+
+function summaryDocumentScore(title=''){
+  const t=String(title).toLowerCase();
+  if(t.includes('resume digest')) return 100;
+  if(/summary of .*amendments/.test(t)) return 95;
+  if(t.includes('conference committee report')) return 92;
+  if(t.includes('veto message')) return 90;
+  if(t.includes('fiscal note')) return 85;
+  if(t.includes('digest')) return 80;
+  if(t.includes('amendment')&&t.includes('adopted')) return 60;
+  return 0;
+}
+
+function chooseSummaryDocuments(html=''){
+  const found=[];
+  const anchorRe=/<a\b[^>]*href=["']([^"']*ViewDocument\.aspx\?[^"']*d=\d+[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while((m=anchorRe.exec(html))){
+    const title=cleanAnchorText(m[2]);
+    const url=canonicalDocumentUrl(m[1]);
+    if(!title||!url) continue;
+    const score=summaryDocumentScore(title);
+    if(!score) continue;
+    found.push({title,url,score,id:documentId(url)});
+  }
+
+  const deduped=[...new Map(found.map(x=>[x.url,x])).values()];
+  const by=(predicate)=>deduped
+    .filter(predicate)
+    .sort((a,b)=>b.score-a.score||b.id-a.id);
+
+  const chosen=[];
+  const add=(doc)=>{if(doc&&!chosen.some(x=>x.url===doc.url)) chosen.push(doc)};
+
+  add(by(x=>/resume digest/i.test(x.title))[0]);
+  add(by(x=>/summary of .*amendments/i.test(x.title))[0]);
+  add(by(x=>/conference committee report/i.test(x.title))[0]);
+  add(by(x=>/veto message/i.test(x.title))[0]);
+  add(by(x=>/fiscal note/i.test(x.title))[0]);
+
+  const digests=by(x=>/\bdigest\b/i.test(x.title)&&!/resume digest/i.test(x.title));
+  add(digests[0]);
+  add(digests.find(x=>/original/i.test(x.title)));
+
+  if(chosen.length<4){
+    for(const doc of deduped.sort((a,b)=>b.score-a.score||b.id-a.id)){
+      add(doc);
+      if(chosen.length>=6) break;
+    }
+  }
+
+  return chosen.slice(0,7).map(({title,url})=>({title,url}));
+}
+
+async function summarySourceSignature(bill,documents){
+  const payload=JSON.stringify({
+    bill_id:bill.id,
+    official_status:bill.official_status,
+    act_number:bill.act_number,
+    effective_date:bill.effective_date,
+    documents
+  });
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload));
+  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function fetchSummaryDocuments(bill){
+  const candidates=[];
+
+  // Most reliable Louisiana Legislature route for a known bill/session.
+  if(bill.instrument&&bill.session?.code){
+    candidates.push(
+      `https://legis.la.gov/Legis/BillInfo.aspx?b=${encodeURIComponent(bill.instrument)}&s=${encodeURIComponent(String(bill.session.code).toLowerCase())}&sbi=y`
+    );
+  }
+
+  // Existing stored source URL can also be useful.
+  if(bill.source_url){
+    try{
+      const u=new URL(bill.source_url,'https://legis.la.gov/');
+      u.searchParams.set('sbi','y');
+      candidates.push(u.toString());
+    }catch{}
+  }
+
+  // Last-resort legacy ID route.
+  if(bill.official_bill_id){
+    candidates.push(
+      `https://legis.la.gov/Legis/BillInfo.aspx?i=${encodeURIComponent(bill.official_bill_id)}&sbi=y`
+    );
+  }
+
+  const seen=new Set();
+  const all=[];
+
+  for(const url of candidates){
+    if(!url||seen.has(url)) continue;
+    seen.add(url);
+
+    try{
+      const r=await fetch(url,{
+        redirect:'follow',
+        headers:{
+          'user-agent':'LeLegis/1.0 (+https://legis.le-comrade.org)',
+          accept:'text/html,application/xhtml+xml'
+        }
+      });
+      if(!r.ok) continue;
+
+      const docs=chooseSummaryDocuments(await r.text());
+      for(const doc of docs){
+        if(!all.some(x=>x.url===doc.url)) all.push(doc);
+      }
+
+      // One correct bill page is enough.
+      if(all.length) break;
+    }catch{}
+  }
+
+  return all;
+}
+
+async function documentToText(env,doc){
+  const r=await fetch(doc.url,{
+    redirect:'follow',
+    headers:{'user-agent':'LeLegis/1.0 (+https://legis.le-comrade.org)'}
+  });
+  if(!r.ok) return null;
+
+  const bytes=await r.arrayBuffer();
+  const contentType=r.headers.get('content-type')||'application/pdf';
+
+  const converted=await env.AI.toMarkdown(
+    {
+      name:`${doc.title.replace(/[^a-z0-9]+/gi,'-').slice(0,80)||'document'}.pdf`,
+      blob:new Blob([bytes],{type:contentType})
+    },
+    {
+      conversionOptions:{
+        output:{format:'text'},
+        pdf:{metadata:false}
+      }
+    }
+  );
+
+  const result=Array.isArray(converted)?converted[0]:converted;
+  const text=String(result?.data??'').replace(/\u0000/g,'').trim();
+  if(!text) return null;
+
+  return {...doc,text:text.slice(0,30000)};
+}
+
+function compactGeneratedSummary(value=''){
+  let text=String(value??'')
+    .replace(/^#+\s*/gm,'')
+    .replace(/^\s*[-*]\s+/gm,'')
+    .replace(/\s+/g,' ')
+    .trim();
+
+  text=text.replace(/^["“]|["”]$/g,'').trim();
+
+  const words=text.split(/\s+/);
+  if(words.length>220){
+    const clipped=words.slice(0,220).join(' ');
+    const lastStop=Math.max(clipped.lastIndexOf('.'),clipped.lastIndexOf('!'),clipped.lastIndexOf('?'));
+    text=lastStop>120?clipped.slice(0,lastStop+1):clipped+'.';
+  }
+  return text;
+}
+
+function extractAiText(result){
+  if(typeof result==='string') return result;
+  if(typeof result?.response==='string') return result.response;
+  if(typeof result?.result==='string') return result.result;
+  if(typeof result?.output_text==='string') return result.output_text;
+  if(typeof result?.choices?.[0]?.message?.content==='string') return result.choices[0].message.content;
+  return '';
+}
+
+async function generateBillSummary(env,bill,documents){
+  const converted=[];
+  for(const doc of documents){
+    try{
+      const item=await documentToText(env,doc);
+      if(item) converted.push(item);
+    }catch{}
+  }
+
+  if(!converted.length) return null;
+
+  const sourcePack=converted.map((doc,i)=>
+    `SOURCE ${i+1}: ${doc.title}\n${doc.text}`
+  ).join('\n\n---\n\n').slice(0,110000);
+
+  const prompt=`You are writing the public-facing Bill Summary for LeLegis, a neutral Louisiana legislative information service.
+
+Write ONE brief plain-English paragraph, ideally 110-180 words and never more than 220 words. Do not use headings, bullets, labels, markdown, citations, or separate sections.
+
+The paragraph should naturally answer as many of these questions as the official material supports:
+- What does the bill actually do?
+- What are the most important changes from current law, policy, or funding?
+- Who is materially affected?
+- What money, spending, revenue, fees, taxes, or fiscal effects matter?
+- What deadlines, exceptions, enforcement powers, eligibility rules, transfers of authority, or other details matter?
+- Did adopted amendments, conference changes, or vetoes materially change the bill during the process?
+- What practical tradeoffs or considerations should a voter understand?
+
+Rules:
+1. Use ONLY facts supported by the official Louisiana documents below.
+2. Do not invent effects, motives, winners, losers, controversy, or policy arguments.
+3. Distinguish final/adopted changes from proposals, drafts, rejected amendments, or earlier versions.
+4. If the sources do not establish a fiscal effect, affected group, process change, or tradeoff, omit it rather than speculate.
+5. Translate legal and budget language into ordinary language without watering down important numbers or exceptions.
+6. Prioritize consequential changes over ceremonial, technical, or procedural detail.
+7. If a fiscal note says there is no material fiscal impact, you may say so briefly if useful.
+8. Do not merely paraphrase the bill caption.
+9. Keep a neutral informational tone. "Things to consider" means factual consequences or implementation considerations supported by the record, not reasons to vote yes or no.
+
+Bill: ${bill.instrument}
+Subject: ${bill.subject??''}
+Official description: ${bill.official_description??''}
+Status: ${bill.official_status??''}
+Act number: ${bill.act_number??''}
+Effective date: ${bill.effective_date??''}
+
+OFFICIAL LOUISIANA SOURCES:
+${sourcePack}`;
+
+  const result=await env.AI.run(SUMMARY_MODEL,{
+    messages:[
+      {role:'system',content:'Produce accurate, neutral, source-grounded legislative summaries for the public.'},
+      {role:'user',content:prompt}
+    ],
+    temperature:0.15,
+    max_completion_tokens:350
+  });
+
+  const summary=compactGeneratedSummary(extractAiText(result));
+  if(summary.split(/\s+/).length<35) return null;
+
+  return {
+    summary,
+    used_documents:converted.map(({title,url})=>({title,url}))
+  };
+}
+
+async function ensureBillSummary(env,bill,{force=false}={}){
+  if(!env.AI){
+    return {
+      text:bill.official_description||'No summary is currently available.',
+      sources:[],
+      generated:false
+    };
+  }
+
+  let documents=[];
+  try{documents=await fetchSummaryDocuments(bill)}catch{}
+
+  if(!documents.length){
+    return {
+      text:bill.official_description||'No summary is currently available.',
+      sources:[],
+      generated:false
+    };
+  }
+
+  const signature=await summarySourceSignature(bill,documents);
+  const cached=await env.DB.prepare(
+    `SELECT summary_text,source_signature,source_documents_json,model,generated_at
+       FROM bill_summaries
+      WHERE bill_id=?1`
+  ).bind(bill.id).first();
+
+  if(!force&&cached?.summary_text&&cached.source_signature===signature){
+    let sources=[];
+    try{sources=JSON.parse(cached.source_documents_json??'[]')}catch{}
+    return {
+      text:cached.summary_text,
+      sources,
+      generated:true,
+      generated_at:cached.generated_at
+    };
+  }
+
+  const generated=await generateBillSummary(env,bill,documents);
+  if(!generated){
+    let cachedSources=[];
+    try{cachedSources=JSON.parse(cached?.source_documents_json??'[]')}catch{}
+    return {
+      text:cached?.summary_text||bill.official_description||'No summary is currently available.',
+      sources:cachedSources,
+      generated:Boolean(cached?.summary_text)
+    };
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO bill_summaries(
+       bill_id,summary_text,source_signature,source_documents_json,model,generated_at
+     ) VALUES(?1,?2,?3,?4,?5,CURRENT_TIMESTAMP)
+     ON CONFLICT(bill_id) DO UPDATE SET
+       summary_text=excluded.summary_text,
+       source_signature=excluded.source_signature,
+       source_documents_json=excluded.source_documents_json,
+       model=excluded.model,
+       generated_at=CURRENT_TIMESTAMP`
+  ).bind(
+    bill.id,
+    generated.summary,
+    signature,
+    JSON.stringify(generated.used_documents),
+    SUMMARY_MODEL
+  ).run();
+
+  return {
+    text:generated.summary,
+    sources:generated.used_documents,
+    generated:true
+  };
+}
+
 async function requireSession(env,request){
   const session=await getSession(env,request);
   return session?.user?session:null;
@@ -570,6 +928,23 @@ export default {
       return json({ok:false,error:'Method not allowed'},405);
     }
 
+    const summaryApiMatch=url.pathname.match(/^\/api\/bills\/([^/]+)\/summary\/?$/);
+    if(summaryApiMatch){
+      let instrument;
+      try{instrument=decodeURIComponent(summaryApiMatch[1]).trim().toUpperCase()}catch{return json({ok:false,error:'Invalid instrument'},400)}
+      if(!validInstrument(instrument))return json({ok:false,error:'Invalid instrument'},400);
+
+      const bill=await getBillDetail(env,instrument);
+      if(!bill)return json({ok:false,error:'Bill not found'},404);
+
+      try{
+        const summary=await ensureBillSummary(env,bill,{force:url.searchParams.get('refresh')==='1'});
+        return json({ok:true,summary});
+      }catch(err){
+        return json({ok:false,error:'Summary generation failed',detail:String(err?.message??err)},500);
+      }
+    }
+
     const apiLegMatch=url.pathname.match(/^\/api\/legislators\/(\d+)\/?$/);
     if(apiLegMatch){const profile=await getLegislator(env,Number(apiLegMatch[1]));return profile?json({ok:true,legislator:profile}):json({ok:false,error:'Legislator not found'},404)}
 
@@ -614,9 +989,14 @@ export default {
       const bill=await getBillDetail(env,instrument);
       if(!bill)return html(renderNotFound(`${instrument} was not found.`,signedIn,userName),404);
 
-      const [community,commentData]=await Promise.all([
+      const [community,commentData,summaryData]=await Promise.all([
         getBillCommunity(env,bill.id,signedIn?session.user.id:null),
-        getBillComments(env,bill.id,signedIn?session.user.id:null,'top')
+        getBillComments(env,bill.id,signedIn?session.user.id:null,'top'),
+        ensureBillSummary(env,bill).catch(()=>({
+          text:bill.official_description||'No summary is currently available.',
+          sources:[],
+          generated:false
+        }))
       ]);
 
       return html(renderBill(bill,{
@@ -626,7 +1006,9 @@ export default {
         community,
         comments:commentData.comments,
         commentCount:commentData.count,
-        stage:billStage(bill)
+        stage:billStage(bill),
+        summaryText:summaryData.text,
+        summarySources:summaryData.sources
       }));
     }
 
