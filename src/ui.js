@@ -136,11 +136,7 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
        ${bill.source_url?`<a class="read-more" href="${esc(bill.source_url)}" target="_blank" rel="noreferrer">Read full bill record</a>`:''}
      </section>
 
-     <section class="bill-section bill-summary-card">
-       <div class="eyebrow" style="color:var(--gold)">Bill summary</div>
-       <p class="summary-text">${esc(bill.official_description || 'No official bill summary is currently available from the Louisiana Legislature record.')}</p>
-       ${bill.source_url?`<a class="read-more" href="${esc(bill.source_url)}" target="_blank" rel="noreferrer">Read full bill record</a>`:''}
-     </section>
+     
 
      <section class="bill-section" id="cast-vote">
        <h2 class="bill-section-title">Cast your vote</h2>
