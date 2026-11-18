@@ -234,16 +234,12 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
      <section class="bill-section" id="cast-vote">
        <h2 class="bill-section-title">Cast your vote</h2>
        <div class="vote-choice-grid">
-         <form method="post" action="/vote/${encodeURIComponent(bill.instrument)}" style="display:contents">
-           <button type="submit" name="position" value="YES" class="vote-choice ${position==='YES'?'selected':''}">
-             <span class="overline">Your read</span><strong>Vote Yes</strong><span>Back the bill</span>
-           </button>
-         </form>
-         <form method="post" action="/vote/${encodeURIComponent(bill.instrument)}" style="display:contents">
-           <button type="submit" name="position" value="NO" class="vote-choice no ${position==='NO'?'selected':''}">
-             <span class="overline">Your read</span><strong>Vote No</strong><span>Block the bill</span>
-           </button>
-         </form>
+         <button type="button" class="vote-choice ${position==='YES'?'selected':''}" data-save-vote="YES">
+           <span class="overline">Your read</span><strong>Vote Yes</strong><span>Back the bill</span>
+         </button>
+         <button type="button" class="vote-choice no ${position==='NO'?'selected':''}" data-save-vote="NO">
+           <span class="overline">Your read</span><strong>Vote No</strong><span>Block the bill</span>
+         </button>
        </div>
        <div class="community-box">
          <div class="community-head"><strong>Community</strong><span class="muted"><span id="yes-percent">${esc(community.yes_percent??0)}</span>% yes · <span id="community-total">${esc(community.total??0)}</span> votes</span></div>
@@ -291,6 +287,41 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
 <script>
 const signedIn=${signedIn?'true':'false'};
 const instrument=${JSON.stringify(bill.instrument)};
+
+document.querySelectorAll('[data-save-vote]').forEach(button=>{
+  button.addEventListener('click',async()=>{
+    const position=button.dataset.saveVote;
+
+    if(!signedIn){
+      location.href='/login?next='+encodeURIComponent('/bills/'+instrument);
+      return;
+    }
+
+    button.disabled=true;
+
+    try{
+      const response=await fetch('/api/me/positions/'+encodeURIComponent(instrument),{
+        method:'PUT',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({position})
+      });
+
+      let data={};
+      try{data=await response.json()}catch{}
+
+      if(!response.ok){
+        alert(data.error||('Could not save vote ('+response.status+').'));
+        button.disabled=false;
+        return;
+      }
+
+      location.href='/bills/'+encodeURIComponent(instrument)+'#cast-vote';
+    }catch(error){
+      alert('Could not save vote. Please try again.');
+      button.disabled=false;
+    }
+  });
+});
 
 document.getElementById('share-bill')?.addEventListener('click',async()=>{
   try{

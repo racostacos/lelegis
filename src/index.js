@@ -1238,52 +1238,6 @@ export default {
       catch(err){return json({ok:false,error:'Failed to load bill',detail:String(err?.message??err)},500)}
     }
 
-    const voteFormMatch=url.pathname.match(/^\/vote\/([^/]+)\/?$/);
-    if(voteFormMatch&&request.method==='POST'){
-      let instrument;
-      try{
-        instrument=decodeURIComponent(voteFormMatch[1]).trim().toUpperCase();
-      }catch{
-        return html(renderNotFound('Invalid bill number.',false,null),400);
-      }
-
-      if(!validInstrument(instrument)){
-        return html(renderNotFound('Invalid bill number.',false,null),400);
-      }
-
-      const session=await requireSession(env,request);
-      if(!session){
-        return new Response(null,{
-          status:303,
-          headers:{location:`/login?next=${encodeURIComponent(`/bills/${instrument}`)}`}
-        });
-      }
-
-      const form=await request.formData().catch(()=>null);
-      const position=String(form?.get('position')??'').toUpperCase();
-
-      if(!['YES','NO'].includes(position)){
-        return json({ok:false,error:'position must be YES or NO'},400);
-      }
-
-      const billId=await latestBillId(env,instrument);
-      if(!billId){
-        return html(renderNotFound(`${instrument} was not found.`,true,session.user?.name??null),404);
-      }
-
-      await env.DB.prepare(
-        `INSERT INTO user_bill_positions(user_id,bill_id,position)
-         VALUES(?1,?2,?3)
-         ON CONFLICT(user_id,bill_id)
-         DO UPDATE SET position=excluded.position,updated_at=CURRENT_TIMESTAMP`
-      ).bind(session.user.id,billId,position).run();
-
-      return new Response(null,{
-        status:303,
-        headers:{location:`/bills/${encodeURIComponent(instrument)}#cast-vote`}
-      });
-    }
-
     const posApi=url.pathname.match(/^\/api\/me\/positions\/([^/]+)\/?$/);
     if(posApi){
       const session=await requireSession(env,request);if(!session)return json({ok:false,error:'Authentication required'},401);
