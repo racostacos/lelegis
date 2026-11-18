@@ -95,6 +95,16 @@ function importMissingFloorVotes() {
   if (result.status !== 0) throw new Error(`floor vote importer exited ${result.status}`);
 }
 
+function importMissingCommitteeVotes() {
+  const result = spawnSync(
+    'node',
+    ['scripts/import-committee-votes.js', '--missing-only'],
+    { stdio:'inherit' }
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`committee vote importer exited ${result.status}`);
+}
+
 async function main() {
   const sessions = activeSessions();
   if (!sessions.length) {
@@ -147,6 +157,9 @@ async function main() {
 
     console.log('Importing newly discovered floor roll calls...');
     importMissingFloorVotes();
+
+    console.log('Importing newly discovered committee motions...');
+    importMissingCommitteeVotes();
 
     for (const [key, hash] of pendingState) saveState(key, hash);
   }

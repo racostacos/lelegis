@@ -19,7 +19,9 @@
     "test:floor-votes": "node --test tests/floor-rollcall.test.js",
     "sync:sessions": "node scripts/sync-sessions.js",
     "sync:daily-actions": "node scripts/sync-daily-actions.js",
-    "test:auto-sync": "node --test tests/session-parser.test.js tests/daily-actions-parser.test.js"
+    "test:auto-sync": "node --test tests/session-parser.test.js tests/daily-actions-parser.test.js",
+    "sync:committee-votes": "node scripts/import-committee-votes.js",
+    "test:committee-votes": "node --test tests/committee-vote-parser.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
