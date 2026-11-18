@@ -509,7 +509,7 @@ async function getBillRepresentativeComparison(env,userId,billId,userPosition){
   if(!district) return null;
 
   const member=await env.DB.prepare(
-    `SELECT id,display_name,last_name,district_number
+    `SELECT id,display_name,last_name,district_number,party
        FROM legislators
       WHERE is_active=1
         AND chamber='HOUSE'
@@ -560,6 +560,7 @@ async function getBillRepresentativeComparison(env,userId,billId,userPosition){
     display_name:member.display_name,
     last_name:member.last_name,
     district_number:member.district_number,
+    party:member.party,
     user_position:userPosition??null,
     representative_position:memberPosition,
     matched:userPosition?userPosition===memberPosition:null,
