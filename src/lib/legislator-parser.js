@@ -116,6 +116,16 @@ function absoluteUrl(href, baseUrl) {
   }
 }
 
+function sourceMemberId(href) {
+  try {
+    const url = new URL(decodeEntities(href), 'https://legis.la.gov/');
+    const id = url.searchParams.get('ID') ?? url.searchParams.get('id');
+    return id && /^\d+$/.test(id) ? id : null;
+  } catch {
+    return decodeEntities(href).match(/[?&]ID=(\d+)/i)?.[1] ?? null;
+  }
+}
+
 function findSeatAnchors(html, chamber) {
   const anchorRe = /<a\b([^>]*?)href\s*=\s*(["'])(.*?)\2([^>]*)>([\s\S]*?)<\/a>/gi;
   const matches = [];
@@ -174,6 +184,7 @@ function parseSeatBlock(blockHtml, chamber, baseUrl, anchor) {
 
   return {
     official_id: officialId(chamber, districtNumber),
+    source_member_id: sourceMemberId(anchor.href),
     first_name: parsedName.firstName,
     last_name: parsedName.lastName,
     display_name: parsedName.displayName,

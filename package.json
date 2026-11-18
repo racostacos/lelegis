@@ -12,9 +12,16 @@
     "sync:bills": "node scripts/import-bills.js",
     "test:bills": "node --test tests/bills.test.js",
     "test:bill-sync": "node --test tests/bill-sync.test.js",
-    "test:bill-detail": "node --test tests/bill-detail.test.js"
+    "test:bill-detail": "node --test tests/bill-detail.test.js",
+    "sync:source-ids": "node scripts/backfill-source-ids.js",
+    "sync:floor-votes": "node scripts/import-floor-rollcalls.js",
+    "test:source-ids": "node --test tests/source-ids.test.js",
+    "test:floor-votes": "node --test tests/floor-rollcall.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.4.394"
   }
 }

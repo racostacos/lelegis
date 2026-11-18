@@ -1,5 +1,6 @@
 import { fetchBillRecord, billInfoUrl, isStale, upsertBillRecord } from './bill-sync.js';
 import { parseBillDetails } from './bill-detail-parser.js';
+import { canonicalBillUrl, parsePrimaryAuthorSource } from './louisiana-source-ids.js';
 
 export const DETAIL_REFRESH_MINUTES = 30;
 
@@ -133,8 +134,17 @@ async function writeDetails(db, bill, details) {
     }
   }
 
-  if (details.primary_author_text) {
-    const author = await resolvePrimaryAuthor(db, bill.origin_chamber, details.primary_author_text);
+  if (details.primary_author_source?.source_member_id) {
+    const author = await db.prepare(
+      `SELECT id
+         FROM legislators
+        WHERE chamber = ?1 AND source_member_id = ?2
+        ORDER BY is_active DESC, id DESC
+        LIMIT 1`
+    ).bind(
+      details.primary_author_source.chamber ?? bill.origin_chamber,
+      details.primary_author_source.source_member_id
+    ).first();
 
     if (author) {
       statements.push(
@@ -208,7 +218,7 @@ async function writeDetails(db, bill, details) {
 
 export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = fetch) {
   const bill = await db.prepare(
-    `SELECT b.id, b.instrument, b.origin_chamber, b.official_status, b.detail_synced_at,
+    `SELECT b.id, b.instrument, b.origin_chamber, b.official_bill_id, b.official_status, b.detail_synced_at,
             s.id AS session_id, s.session_code, s.start_date, s.is_active
        FROM bills b
        JOIN sessions s ON s.id = b.session_id
@@ -242,7 +252,9 @@ export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = f
 
   if (!shouldRefresh) return { found: true, refreshed: false };
 
-  const expandedUrl = `${billInfoUrl(bill.session_code, instrument)}&sbi=y`;
+  const expandedUrl = bill.official_bill_id
+    ? `${canonicalBillUrl(String(bill.official_bill_id))}&sbi=y`
+    : `${billInfoUrl(bill.session_code, instrument)}&sbi=y`;
 
   const response = await fetchImpl(expandedUrl, {
     redirect: 'follow',
@@ -266,6 +278,7 @@ export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = f
 
   const defaultYear = Number(String(bill.start_date).slice(0, 4));
   const details = parseBillDetails(html, instrument, defaultYear);
+  details.primary_author_source = parsePrimaryAuthorSource(html, bill.origin_chamber);
 
   await writeDetails(db, bill, details);
 

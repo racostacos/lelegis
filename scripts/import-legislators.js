@@ -41,6 +41,7 @@ function buildSql(seats) {
 
     lines.push(`UPDATE legislators SET
   official_id = ${sqlString(m.official_id)},
+  source_member_id = ${sqlString(m.source_member_id)},
   first_name = ${sqlString(m.first_name)},
   last_name = ${sqlString(m.last_name)},
   display_name = ${sqlString(m.display_name)},
@@ -54,8 +55,8 @@ function buildSql(seats) {
   updated_at = CURRENT_TIMESTAMP
 WHERE chamber = ${sqlString(m.chamber)} AND district_number = ${sqlInt(m.district_number)};`);
 
-    lines.push(`INSERT INTO legislators (official_id, first_name, last_name, display_name, chamber, district_number, party, email, phone, office_address, photo_url, profile_url, is_active)
-SELECT ${sqlString(m.official_id)}, ${sqlString(m.first_name)}, ${sqlString(m.last_name)}, ${sqlString(m.display_name)}, ${sqlString(m.chamber)}, ${sqlInt(m.district_number)}, ${sqlString(m.party)}, ${sqlString(m.email)}, ${sqlString(m.phone)}, ${sqlString(m.office_address)}, ${sqlString(m.photo_url)}, ${sqlString(m.profile_url)}, 1
+    lines.push(`INSERT INTO legislators (official_id, source_member_id, first_name, last_name, display_name, chamber, district_number, party, email, phone, office_address, photo_url, profile_url, is_active)
+SELECT ${sqlString(m.official_id)}, ${sqlString(m.source_member_id)}, ${sqlString(m.first_name)}, ${sqlString(m.last_name)}, ${sqlString(m.display_name)}, ${sqlString(m.chamber)}, ${sqlInt(m.district_number)}, ${sqlString(m.party)}, ${sqlString(m.email)}, ${sqlString(m.phone)}, ${sqlString(m.office_address)}, ${sqlString(m.photo_url)}, ${sqlString(m.profile_url)}, 1
 WHERE NOT EXISTS (
   SELECT 1 FROM legislators WHERE chamber = ${sqlString(m.chamber)} AND district_number = ${sqlInt(m.district_number)}
 );`);
