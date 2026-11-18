@@ -28,6 +28,35 @@ button,.button{border:0;border-radius:14px;padding:13px 16px;background:var(--te
 .account-section{margin-top:22px}.member-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.member-card{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;text-decoration:none;background:white;border:1px solid var(--line);border-radius:18px;padding:18px}.member-score{font:700 28px Georgia,serif;text-align:right}.member-score small{display:block;font:700 11px Inter,sans-serif;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.setting-block{border:1px solid var(--line);border-radius:16px;padding:18px;background:white}.form-row{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}.field-label{display:grid;gap:6px;font-size:13px;font-weight:800;color:var(--muted)}.danger-zone{border-color:#ddb4b0;background:#fff9f8}.footer{max-width:1180px;margin:auto;padding:0 22px 40px;color:var(--muted);font-size:13px}
 @media(max-width:800px){.grid{grid-template-columns:1fr}.navlinks{gap:2px}.navlinks a{padding:8px}.timeline-item{grid-template-columns:86px 14px 1fr}.hero{padding:24px}.statgrid{grid-template-columns:repeat(2,1fr)}.member-grid,.settings-grid{grid-template-columns:1fr}.form-row{grid-template-columns:1fr}}
+
+.bill-detail-wrap{max-width:900px;margin:auto;padding:28px 18px 100px}
+.bill-topline{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:24px}
+.bill-back,.bill-share{font-weight:800;color:var(--teal-dark);text-decoration:none;background:none;border:0;padding:0}
+.bill-kicker{font:700 17px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--teal-dark);text-decoration:underline;margin-bottom:12px}
+.bill-title{font-size:clamp(42px,7vw,64px);line-height:1.03;margin:0 0 26px}
+.bill-section{background:var(--paper);border:1px solid var(--line);border-radius:22px;padding:26px;margin-top:18px}
+.bill-section-title{font-size:34px;margin:0 0 18px}
+.road-head{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.road-label{font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:900;color:#18a89c}
+.road-steps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:start;margin:22px 0}
+.road-step{min-width:0}.road-node{display:flex;align-items:center}.road-dot{width:28px;height:28px;border-radius:50%;border:4px solid #cbd8d4;background:var(--paper);flex:0 0 auto}.road-line{height:6px;background:#cbd8d4;border-radius:999px;flex:1;margin-left:7px}.road-step.done .road-dot,.road-step.current .road-dot{background:#20aaa0;border-color:#20aaa0}.road-step.done .road-line{background:#20aaa0}.road-step.current .road-line{background:#d9efec}
+.road-name{font-size:13px;font-weight:850;margin-top:9px;line-height:1.2}.latest-action{background:#edf3f1;border-radius:16px;padding:18px;line-height:1.55}
+.bill-facts{display:grid;gap:0}.bill-fact{display:grid;grid-template-columns:140px 1fr;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}.bill-fact:last-child{border-bottom:0}.bill-fact-label{color:var(--muted);font-size:13px;font-weight:900;text-transform:uppercase}.bill-fact-value{font-weight:800;text-align:right}
+.summary-text{font-size:18px;line-height:1.6;color:#445267}.read-more{display:inline-block;margin-top:12px;font-weight:850;color:var(--teal-dark);text-decoration:none}
+.vote-choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.vote-choice{background:#edf3f1;border:1px solid var(--line);border-radius:18px;padding:22px;text-align:left;color:var(--ink)}.vote-choice .overline{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:900}.vote-choice strong{display:block;font:700 31px Georgia,serif;margin:7px 0}.vote-choice.selected{outline:3px solid rgba(8,127,119,.2);border-color:#7faea6}.vote-choice.no.selected{outline-color:rgba(166,59,50,.17);border-color:#c48b86}
+.community-box{margin-top:16px;background:#edf3f1;border-radius:16px;padding:18px}.community-head{display:flex;justify-content:space-between;gap:10px}.community-bar{height:14px;background:#f8e7e8;border-radius:999px;overflow:hidden;margin:16px 0}.community-yes{height:100%;background:#23c66b}.community-totals{display:flex;justify-content:space-between;font-weight:900}
+.debate-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.debate-tabs{display:flex;gap:8px;margin:16px 0 20px}.debate-tab{background:transparent;color:var(--muted);padding:10px 16px}.debate-tab.active{background:#edf3f1;color:var(--ink)}.comment-form{display:grid;gap:10px;margin-bottom:18px}.comment-form textarea{min-height:100px;resize:vertical}
+.comment{display:grid;grid-template-columns:58px 1fr;gap:12px;padding:18px 0;border-top:1px solid var(--line)}.comment:first-of-type{border-top:0}.sway-box{display:grid;justify-items:center;align-content:start;gap:4px;padding-top:3px}.sway-button{background:none;color:var(--muted);font-size:20px;padding:0;border:0}.sway-button.liked{color:var(--teal)}.sway-count{font-weight:900;color:var(--teal)}.comment-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.comment-name{font-weight:900}.comment-age,.comment-position{color:var(--muted);font-size:13px}.comment-body{font-size:16px;line-height:1.55;margin-top:8px;white-space:pre-wrap}.comment-actions{display:flex;gap:14px;margin-top:10px}.comment-actions button{background:none;color:var(--muted);padding:0;font-size:13px}.reply{margin-left:18px;padding-left:18px;border-left:2px solid var(--line)}
+.sticky-vote{display:none}
+@media(max-width:800px){
+  .bill-detail-wrap{padding:22px 14px 110px}
+  .bill-section{padding:22px 18px}
+  .road-steps{overflow-x:auto;grid-template-columns:repeat(6,120px);padding-bottom:4px}
+  .bill-fact{grid-template-columns:1fr auto}
+  .sticky-vote{display:block;position:fixed;z-index:40;left:18px;right:18px;bottom:18px;background:#07111d;color:white;text-align:center;border-radius:16px;padding:17px 20px;font-weight:900;text-decoration:none;box-shadow:0 8px 30px rgba(0,0,0,.22)}
+}
+@media(max-width:520px){.vote-choice-grid{grid-template-columns:1fr 1fr}.bill-title{font-size:42px}.comment{grid-template-columns:44px 1fr}.bill-section-title{font-size:30px}}
+
 </style></head><body>
 <header class="sitebar"><nav class="nav"><a class="brand" href="/">LeLegis</a><div class="navlinks"><a class="${active==='bills'?'active':''}" href="/bills">Bills</a><a class="${active==='legislators'?'active':''}" href="/legislators">Legislators</a><a class="${active==='account'?'active':''}" href="${signedIn?'/account':'/login'}">${signedIn?esc(firstName(userName)):'Sign in'}</a></div></nav></header>
 ${body}<footer class="footer">LeLegis · Louisiana legislative data from official Louisiana Legislature sources.</footer></body></html>`;
@@ -42,13 +71,165 @@ export function renderBills({bills=[],query='',signedIn=false,userName=null}){
  return page({title:query?`Bills matching ${query}`:'Bills',active:'bills',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="eyebrow">Bill tracker</div><h1>Bills</h1><form class="search" action="/bills" method="get"><input name="q" value="${esc(query)}" placeholder="Search bill number, subject, description or status"><button>Search</button></form></section><section style="margin-top:22px" class="stack">${cards||'<div class="empty">No matching bills.</div>'}</section></main>`});
 }
 
-export function renderBill(bill,{signedIn=false,position=null,userName=null}={}){
- const votes=(bill.vote_events??[]).map(v=>{const tally=v.vote_method==='WITHOUT_OBJECTION'?'Without objection':[v.yea_total!=null?`${v.yea_total} yea`:null,v.nay_total!=null?`${v.nay_total} nay`:null,v.absent_total!=null?`${v.absent_total} absent`:null].filter(Boolean).join(' · ');const members=(v.member_votes??[]).map(m=>`<a class="member-vote" href="/legislators/${m.legislator_id}"><span>${esc(m.display_name)}</span><strong class="${voteClass(m.vote)}">${esc(m.vote)}</strong></a>`).join('');return `<article class="vote-card"><div class="meta"><span class="chip ${String(v.chamber).toLowerCase()}">${esc(v.chamber)}</span><span class="chip">${esc(v.event_type)}</span>${v.sequence_number?`<span class="chip">Roll #${esc(v.sequence_number)}</span>`:''}</div><h3 style="margin-top:12px">${esc(v.motion||'Vote')}</h3><div class="small muted">${fmtDate(v.vote_date)}${v.vote_time?` · ${esc(v.vote_time)}`:''}${tally?` · ${esc(tally)}`:''}</div>${members?`<div class="vote-grid">${members}</div>`:`<div class="small muted" style="margin-top:12px">${v.vote_method==='WITHOUT_OBJECTION'?'No individual roll call was recorded for this motion.':'No individual member votes recorded.'}</div>`}</article>`}).join('');
- const actions=(bill.actions??[]).map(a=>`<div class="timeline-item"><div class="small muted">${fmtDate(a.action_date)}</div><div class="timeline-dot"></div><div><strong>${esc(a.chamber||'')}</strong><div class="muted" style="margin-top:4px">${esc(a.official_text)}</div></div></div>`).join('');
- const author=bill.primary_author?`<a href="/legislators/${bill.primary_author.id}">${esc(bill.primary_author.display_name)}</a> · ${esc(bill.primary_author.party)} · District ${esc(bill.primary_author.district_number)}`:'Not available';
- const positionBox=signedIn?`<section class="position-box"><div class="eyebrow">Your position</div><h3 style="margin-top:6px">Would you vote for this bill?</h3><div class="position-actions"><button class="position-button ${position==='YES'?'selected':''}" data-position="YES">YES</button><button class="position-button no ${position==='NO'?'selected':''}" data-position="NO">NO</button></div><div id="position-status" class="small muted" style="margin-top:10px">${position?`Saved: ${esc(position)}`:'Not rated yet.'}</div></section>`:`<section class="position-box"><div class="eyebrow">Your position</div><h3 style="margin-top:6px">Would you vote for this bill?</h3><p class="muted">Sign in to save your position and compare it with Louisiana legislators.</p><a class="button" href="/login?next=${encodeURIComponent(`/bills/${bill.instrument}`)}">Sign in to vote</a></section>`;
- const positionScript=signedIn?`<script>document.querySelectorAll('[data-position]').forEach(button=>button.addEventListener('click',async()=>{const position=button.dataset.position;const r=await fetch('/api/me/positions/${encodeURIComponent(bill.instrument)}',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({position})});if(r.status===401){location.href='/login?next=${encodeURIComponent(`/bills/${bill.instrument}`)}';return}const data=await r.json();if(!r.ok){document.getElementById('position-status').textContent=data.error||'Could not save position.';return}document.querySelectorAll('[data-position]').forEach(x=>x.classList.toggle('selected',x.dataset.position===position));document.getElementById('position-status').textContent='Saved: '+position;}));</script>`:'';
- return page({title:`${bill.instrument}: ${bill.subject||'Bill'}`,active:'bills',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="meta"><span class="chip ${String(bill.origin_chamber).toLowerCase()}">${esc(bill.instrument)}</span><span class="chip status">${esc(statusLabel(bill.normalized_status))}</span>${bill.act_number?`<span class="chip">Act ${esc(bill.act_number)}</span>`:''}</div><h1>${esc(bill.subject||bill.instrument)}</h1><p class="lede">${esc(bill.official_description||'')}</p></section><div class="grid"><div class="stack">${positionBox}<section class="panel"><h2>Votes</h2>${votes||'<div class="empty">No votes recorded.</div>'}</section><section class="panel"><h2>Legislative history</h2><div class="timeline">${actions||'<div class="empty">No actions recorded.</div>'}</div></section></div><aside class="stack"><section class="panel"><h3>Status</h3><div class="muted">${esc(bill.official_status||statusLabel(bill.normalized_status))}</div>${bill.effective_date?`<div class="small muted" style="margin-top:10px">Effective ${fmtDate(bill.effective_date)}</div>`:''}</section><section class="panel"><h3>Primary author</h3><div class="muted">${author}</div></section><section class="panel"><h3>Session</h3><div class="muted">${esc(bill.session?.name||bill.session?.code||'')}</div></section>${bill.source_url?`<a class="button secondary" href="${esc(bill.source_url)}" target="_blank" rel="noreferrer">Official bill page</a>`:''}</aside></div></main>${positionScript}`});
+export function renderBill(bill,{signedIn=false,position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0}={}){
+ const stages=['Introduced','In Committee','On the Floor','Passed House','Passed Senate','Signed'];
+ const latest=(bill.actions??[]).at(-1);
+ const introduced=(bill.actions??[])[0]?.action_date??bill.created_at?.slice?.(0,10)??'';
+ const summary=bill.official_description||'No summary is currently available from the official Louisiana Legislature record.';
+ const status=bill.official_status||statusLabel(bill.normalized_status);
+ const stageHtml=stages.map((name,i)=>`<div class="road-step ${i<stage?'done':i===stage?'current':''}"><div class="road-node"><span class="road-dot"></span>${i<stages.length-1?'<span class="road-line"></span>':''}</div><div class="road-name">${esc(name)}</div></div>`).join('');
+
+ const renderComment=(c,isReply=false)=>`<article class="comment ${isReply?'reply':''}" data-comment="${c.id}">
+   <div class="sway-box">
+     <button class="sway-button ${Number(c.liked_by_user)?'liked':''}" data-like="${c.id}" aria-label="Like comment">▲</button>
+     <div class="sway-count">${esc(c.like_count??0)}</div>
+   </div>
+   <div>
+     <div class="comment-meta">
+       <span class="comment-name">${esc(c.user_name||'LeLegis user')}</span>
+       <span class="comment-age">${esc(fmtDate(String(c.created_at??'').slice(0,10)))}</span>
+       ${c.user_position?`<span class="comment-position">· Voted ${c.user_position==='YES'?'Yes':'No'}</span>`:''}
+     </div>
+     <div class="comment-body">${esc(c.body)}</div>
+     <div class="comment-actions">
+       ${signedIn?`<button data-reply="${c.id}">Reply</button>`:''}
+       <button type="button">Report</button>
+       <button type="button">Collapse thread</button>
+     </div>
+     ${signedIn?`<div id="reply-form-${c.id}" hidden style="margin-top:12px"><textarea class="field" id="reply-body-${c.id}" placeholder="Write a reply"></textarea><button data-submit-reply="${c.id}" style="margin-top:8px">Post reply</button></div>`:''}
+     ${(c.replies??[]).map(r=>renderComment(r,true)).join('')}
+   </div>
+ </article>`;
+
+ const commentsHtml=comments.map(c=>renderComment(c,false)).join('');
+
+ return page({
+   title:`${bill.instrument}: ${bill.subject||'Bill'}`,
+   active:'bills',
+   signedIn,
+   userName,
+   body:`<main class="bill-detail-wrap">
+     <div class="bill-topline"><a class="bill-back" href="/bills">← Bills</a><button class="bill-share" id="share-bill">Share</button></div>
+     <div class="bill-kicker">${esc(bill.instrument)}</div>
+     <h1 class="bill-title">${esc(bill.subject||bill.instrument)}</h1>
+
+     <section class="bill-section">
+       <div class="road-head"><div class="road-label">Road to the floor</div><span class="small muted">How it works</span></div>
+       <div class="road-steps">${stageHtml}</div>
+       <div class="latest-action"><strong>${latest?`Latest action · ${fmtDate(latest.action_date)}`:'Latest action'}</strong><div class="muted" style="margin-top:6px">${esc(latest?.official_text||status)}</div></div>
+     </section>
+
+     <section class="bill-section">
+       <div class="eyebrow" style="color:var(--gold)">Bill details</div>
+       <div class="bill-facts">
+         <div class="bill-fact"><div class="bill-fact-label">Status</div><div class="bill-fact-value">${esc(status)}</div></div>
+         <div class="bill-fact"><div class="bill-fact-label">Introduced</div><div class="bill-fact-value">${fmtDate(introduced)}</div></div>
+         <div class="bill-fact"><div class="bill-fact-label">Primary author</div><div class="bill-fact-value">${bill.primary_author?`<a href="/legislators/${bill.primary_author.id}">${esc(bill.primary_author.display_name)}</a>`:'Not available'}</div></div>
+         ${bill.act_number?`<div class="bill-fact"><div class="bill-fact-label">Act</div><div class="bill-fact-value">Act ${esc(bill.act_number)}</div></div>`:''}
+       </div>
+       ${bill.source_url?`<a class="button secondary" style="display:block;text-align:center;margin-top:18px" href="${esc(bill.source_url)}" target="_blank" rel="noreferrer">Full bill record on legis.la.gov</a>`:''}
+     </section>
+
+     <section class="bill-section">
+       <div class="eyebrow" style="color:var(--gold)">Bill summary</div>
+       <p class="summary-text">${esc(summary)}</p>
+       ${bill.source_url?`<a class="read-more" href="${esc(bill.source_url)}" target="_blank" rel="noreferrer">Read full bill record</a>`:''}
+     </section>
+
+     <section class="bill-section" id="cast-vote">
+       <h2 class="bill-section-title">Cast your vote</h2>
+       <div class="vote-choice-grid">
+         <button class="vote-choice ${position==='YES'?'selected':''}" data-position="YES">
+           <span class="overline">Your read</span><strong>Vote Yes</strong><span>Back the bill</span>
+         </button>
+         <button class="vote-choice no ${position==='NO'?'selected':''}" data-position="NO">
+           <span class="overline">Your read</span><strong>Vote No</strong><span>Block the bill</span>
+         </button>
+       </div>
+       <div class="community-box">
+         <div class="community-head"><strong>Community</strong><span class="muted"><span id="yes-percent">${esc(community.yes_percent??0)}</span>% yes · <span id="community-total">${esc(community.total??0)}</span> votes</span></div>
+         <div class="community-bar"><div class="community-yes" id="community-bar" style="width:${esc(community.yes_percent??0)}%"></div></div>
+         <div class="community-totals"><span>YES <span id="yes-count">${esc(community.yes??0)}</span></span><span>NO <span id="no-count">${esc(community.no??0)}</span></span></div>
+       </div>
+       ${!signedIn?`<p class="small muted" style="margin-top:14px">Sign in to save your vote and compare it with Louisiana lawmakers.</p>`:''}
+     </section>
+
+     <section class="bill-section" id="floor-debate">
+       <div class="debate-head"><h2 class="bill-section-title" style="margin:0">Floor debate</h2><strong class="muted">${esc(commentCount)} comment${commentCount===1?'':'s'}</strong></div>
+       <div class="debate-tabs"><button class="debate-tab active" data-sort="top">Top</button><button class="debate-tab" data-sort="new">Newest</button></div>
+       ${signedIn?`<div class="comment-form"><textarea id="comment-body" class="field" placeholder="What do you think about this bill?"></textarea><button id="post-comment">Post comment</button></div>`:`<div style="padding:8px 0 20px"><p class="muted">Sign in to vote, comment, and upvote the best takes.</p><a class="button" href="/login?next=${encodeURIComponent(`/bills/${bill.instrument}`)}">Sign in</a></div>`}
+       <div id="comments-list">${commentsHtml||'<div class="empty">No comments yet. Start the floor debate.</div>'}</div>
+     </section>
+
+     <section class="bill-section">
+       <h2 class="bill-section-title">Official votes</h2>
+       <div class="stack">${(bill.vote_events??[]).map(v=>`<div class="vote-card"><div class="meta"><span class="chip ${String(v.chamber).toLowerCase()}">${esc(v.chamber)}</span><span class="chip">${esc(v.event_type)}</span></div><h3 style="margin-top:10px">${esc(v.motion||'Vote')}</h3><div class="small muted">${fmtDate(v.vote_date)}${v.yea_total!=null?` · ${esc(v.yea_total)} yea`:''}${v.nay_total!=null?` · ${esc(v.nay_total)} nay`:''}</div></div>`).join('')||'<div class="empty">No official votes recorded yet.</div>'}</div>
+     </section>
+   </main>
+   <a class="sticky-vote" href="${signedIn?'#cast-vote':`/login?next=${encodeURIComponent(`/bills/${bill.instrument}`)}`}">${signedIn?'Cast your vote':'Sign in to vote'}</a>
+<script>
+const signedIn=${signedIn?'true':'false'};
+const instrument=${JSON.stringify(bill.instrument)};
+
+document.getElementById('share-bill')?.addEventListener('click',async()=>{
+  try{
+    if(navigator.share) await navigator.share({title:document.title,url:location.href});
+    else { await navigator.clipboard.writeText(location.href); alert('Bill link copied.'); }
+  }catch{}
+});
+
+async function saveVote(position){
+  if(!signedIn){ location.href='/login?next='+encodeURIComponent('/bills/'+instrument); return; }
+  const r=await fetch('/api/me/positions/'+encodeURIComponent(instrument),{
+    method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({position})
+  });
+  const data=await r.json();
+  if(!r.ok){ alert(data.error||'Could not save vote.'); return; }
+  location.reload();
+}
+document.querySelectorAll('[data-position]').forEach(x=>x.addEventListener('click',()=>saveVote(x.dataset.position)));
+
+document.getElementById('post-comment')?.addEventListener('click',async()=>{
+  const body=document.getElementById('comment-body').value.trim();
+  if(!body)return;
+  const r=await fetch('/api/bills/'+encodeURIComponent(instrument)+'/comments',{
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({body})
+  });
+  const data=await r.json();
+  if(!r.ok){alert(data.error||'Could not post comment.');return}
+  location.reload();
+});
+
+document.addEventListener('click',async e=>{
+  const like=e.target.closest('[data-like]');
+  if(like){
+    if(!signedIn){location.href='/login?next='+encodeURIComponent('/bills/'+instrument);return}
+    const liked=like.classList.contains('liked');
+    const r=await fetch('/api/comments/'+like.dataset.like+'/like',{method:liked?'DELETE':'POST'});
+    if(r.ok) location.reload();
+    return;
+  }
+  const reply=e.target.closest('[data-reply]');
+  if(reply){
+    const box=document.getElementById('reply-form-'+reply.dataset.reply);
+    if(box)box.hidden=!box.hidden;
+    return;
+  }
+  const submit=e.target.closest('[data-submit-reply]');
+  if(submit){
+    const id=submit.dataset.submitReply;
+    const body=document.getElementById('reply-body-'+id)?.value.trim();
+    if(!body)return;
+    const r=await fetch('/api/bills/'+encodeURIComponent(instrument)+'/comments',{
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({body,parent_comment_id:Number(id)})
+    });
+    const data=await r.json();
+    if(!r.ok){alert(data.error||'Could not post reply.');return}
+    location.reload();
+  }
+});
+</script>`
+ });
 }
 
 export function renderLegislators({legislators=[],signedIn=false,userName=null}){

@@ -327,6 +327,106 @@ async function representativeLookup(env,{mode,address,zip,lon,lat}){
   };
 }
 
+
+async function getBillCommunity(env,billId,userId=null){
+  const counts=await env.DB.prepare(
+    `SELECT
+       SUM(CASE WHEN position='YES' THEN 1 ELSE 0 END) AS yes_count,
+       SUM(CASE WHEN position='NO' THEN 1 ELSE 0 END) AS no_count,
+       COUNT(*) AS total_count
+     FROM user_bill_positions
+     WHERE bill_id=?1`
+  ).bind(billId).first();
+
+  let userPosition=null;
+  if(userId){
+    userPosition=(await env.DB.prepare(
+      `SELECT position FROM user_bill_positions WHERE user_id=?1 AND bill_id=?2 LIMIT 1`
+    ).bind(userId,billId).first())?.position??null;
+  }
+
+  const total=Number(counts?.total_count??0);
+  const yes=Number(counts?.yes_count??0);
+  const no=Number(counts?.no_count??0);
+
+  return {
+    yes,
+    no,
+    total,
+    yes_percent:total?Math.round((yes/total)*100):0,
+    user_position:userPosition
+  };
+}
+
+async function getBillComments(env,billId,userId=null,sort='top'){
+  const order=sort==='new'
+    ? 'uc.created_at DESC, uc.id DESC'
+    : 'like_count DESC, uc.created_at DESC, uc.id DESC';
+
+  const {results}=await env.DB.prepare(
+    `SELECT
+       uc.id,
+       uc.parent_comment_id,
+       uc.user_id,
+       uc.body,
+       uc.created_at,
+       u.name AS user_name,
+       ubp.position AS user_position,
+       COUNT(cl.id) AS like_count,
+       MAX(CASE WHEN cl.user_id=?2 THEN 1 ELSE 0 END) AS liked_by_user
+     FROM user_comments uc
+     JOIN "user" u ON u.id=uc.user_id
+     LEFT JOIN user_bill_positions ubp
+       ON ubp.user_id=uc.user_id AND ubp.bill_id=uc.bill_id
+     LEFT JOIN comment_likes cl ON cl.comment_id=uc.id
+     WHERE uc.bill_id=?1
+     GROUP BY uc.id
+     ORDER BY ${order}`
+  ).bind(billId,userId??'').all();
+
+  const map=new Map();
+  for(const row of results) map.set(row.id,{...row,replies:[]});
+  const roots=[];
+  for(const row of map.values()){
+    if(row.parent_comment_id && map.has(row.parent_comment_id)){
+      map.get(row.parent_comment_id).replies.push(row);
+    }else{
+      roots.push(row);
+    }
+  }
+
+  return { count:results.length, comments:roots };
+}
+
+async function createBillComment(env,userId,billId,body,parentCommentId=null){
+  const text=String(body??'').trim();
+  if(!text) throw new Error('Comment cannot be empty.');
+  if(text.length>4000) throw new Error('Comment must be 4,000 characters or less.');
+
+  let parent=null;
+  if(parentCommentId){
+    parent=await env.DB.prepare(
+      `SELECT id FROM user_comments WHERE id=?1 AND bill_id=?2 LIMIT 1`
+    ).bind(Number(parentCommentId),billId).first();
+    if(!parent) throw new Error('Reply target not found.');
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO user_comments(user_id,bill_id,parent_comment_id,body)
+     VALUES(?1,?2,?3,?4)`
+  ).bind(userId,billId,parent?.id??null,text).run();
+}
+
+function billStage(bill){
+  const status=String(bill.normalized_status??'').toUpperCase();
+  const text=String(bill.official_status??'').toUpperCase();
+  if(bill.act_number||status.includes('SIGNED')||text.includes('SIGNED')) return 5;
+  if(status.includes('PASSED')||text.includes('PASSED')) return 4;
+  if((bill.vote_events??[]).some(v=>v.event_type==='FLOOR')) return 2;
+  if((bill.vote_events??[]).some(v=>v.committee)) return 1;
+  return 0;
+}
+
 async function requireSession(env,request){
   const session=await getSession(env,request);
   return session?.user?session:null;
@@ -417,6 +517,59 @@ export default {
       return json({ok:true});
     }
 
+
+    const commentListMatch=url.pathname.match(/^\/api\/bills\/([^/]+)\/comments\/?$/);
+    if(commentListMatch){
+      let instrument;
+      try{instrument=decodeURIComponent(commentListMatch[1]).trim().toUpperCase()}catch{return json({ok:false,error:'Invalid instrument'},400)}
+      if(!validInstrument(instrument))return json({ok:false,error:'Invalid instrument'},400);
+      const billId=await latestBillId(env,instrument);
+      if(!billId)return json({ok:false,error:'Bill not found'},404);
+
+      if(request.method==='GET'){
+        const session=await getSession(env,request);
+        const sort=url.searchParams.get('sort')==='new'?'new':'top';
+        return json({ok:true,...await getBillComments(env,billId,session?.user?.id??null,sort)});
+      }
+
+      if(request.method==='POST'){
+        const session=await requireSession(env,request);
+        if(!session)return json({ok:false,error:'Authentication required'},401);
+        const body=await request.json().catch(()=>({}));
+        try{
+          await createBillComment(env,session.user.id,billId,body.body,body.parent_comment_id??null);
+          return json({ok:true});
+        }catch(err){
+          return json({ok:false,error:String(err?.message??err)},400);
+        }
+      }
+
+      return json({ok:false,error:'Method not allowed'},405);
+    }
+
+    const likeMatch=url.pathname.match(/^\/api\/comments\/(\d+)\/like\/?$/);
+    if(likeMatch){
+      const session=await requireSession(env,request);
+      if(!session)return json({ok:false,error:'Authentication required'},401);
+      const commentId=Number(likeMatch[1]);
+      const exists=await env.DB.prepare(`SELECT id FROM user_comments WHERE id=?1`).bind(commentId).first();
+      if(!exists)return json({ok:false,error:'Comment not found'},404);
+
+      if(request.method==='POST'){
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO comment_likes(comment_id,user_id) VALUES(?1,?2)`
+        ).bind(commentId,session.user.id).run();
+        return json({ok:true});
+      }
+      if(request.method==='DELETE'){
+        await env.DB.prepare(
+          `DELETE FROM comment_likes WHERE comment_id=?1 AND user_id=?2`
+        ).bind(commentId,session.user.id).run();
+        return json({ok:true});
+      }
+      return json({ok:false,error:'Method not allowed'},405);
+    }
+
     const apiLegMatch=url.pathname.match(/^\/api\/legislators\/(\d+)\/?$/);
     if(apiLegMatch){const profile=await getLegislator(env,Number(apiLegMatch[1]));return profile?json({ok:true,legislator:profile}):json({ok:false,error:'Legislator not found'},404)}
 
@@ -459,8 +612,22 @@ export default {
       let instrument;try{instrument=decodeURIComponent(billPageMatch[1]).trim().toUpperCase()}catch{return html(renderNotFound('Invalid bill number.',signedIn,userName),400)}
       if(!validInstrument(instrument))return html(renderNotFound('Invalid bill number.',signedIn,userName),400);
       const bill=await getBillDetail(env,instrument);
-      const position=signedIn?await getUserPosition(env,session.user.id,instrument):null;
-      return bill?html(renderBill(bill,{signedIn,position,userName})):html(renderNotFound(`${instrument} was not found.`,signedIn,userName),404);
+      if(!bill)return html(renderNotFound(`${instrument} was not found.`,signedIn,userName),404);
+
+      const [community,commentData]=await Promise.all([
+        getBillCommunity(env,bill.id,signedIn?session.user.id:null),
+        getBillComments(env,bill.id,signedIn?session.user.id:null,'top')
+      ]);
+
+      return html(renderBill(bill,{
+        signedIn,
+        position:community.user_position,
+        userName,
+        community,
+        comments:commentData.comments,
+        commentCount:commentData.count,
+        stage:billStage(bill)
+      }));
     }
 
     if(url.pathname==='/legislators'||url.pathname==='/legislators/')return html(renderLegislators({legislators:await getLegislators(env),signedIn,userName}));
