@@ -195,12 +195,24 @@ export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = f
 
   if (!bill) return { found: false, refreshed: false };
 
-  const hasActions = await db.prepare(
-    `SELECT EXISTS(SELECT 1 FROM bill_actions WHERE bill_id = ?1) AS has_actions`
+  const completeness = await db.prepare(
+    `SELECT
+       EXISTS(SELECT 1 FROM bill_actions WHERE bill_id = ?1) AS has_actions,
+       EXISTS(
+         SELECT 1 FROM bill_authors
+          WHERE bill_id = ?1 AND author_type = 'PRIMARY'
+       ) AS has_primary_author,
+       act_number,
+       effective_date
+     FROM bills
+     WHERE id = ?1`
   ).bind(bill.id).first();
 
   const shouldRefresh =
-    !Number(hasActions?.has_actions ?? 0) ||
+    !Number(completeness?.has_actions ?? 0) ||
+    !Number(completeness?.has_primary_author ?? 0) ||
+    !completeness?.act_number ||
+    !completeness?.effective_date ||
     !bill.detail_synced_at ||
     (bill.is_active && isStale(bill.detail_synced_at, DETAIL_REFRESH_MINUTES));
 

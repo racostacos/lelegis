@@ -29,7 +29,6 @@ function stripHtml(value = '') {
 export function isoDate(value, defaultYear = null) {
   const m = String(value).trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?$/);
   if (!m) return null;
-
   let year;
   if (m[3]) {
     year = Number(m[3]);
@@ -39,11 +38,19 @@ export function isoDate(value, defaultYear = null) {
   } else {
     return null;
   }
-
   return `${year}-${String(Number(m[1])).padStart(2, '0')}-${String(Number(m[2])).padStart(2, '0')}`;
 }
 
 export function parsePrimaryAuthor(html, instrument) {
+  // Most reliable Louisiana pattern: linked author followed by "(primary)".
+  const rawPrimary = html.match(
+    /<a\b[^>]*>([\s\S]*?)<\/a>\s*(?:<[^>]+>\s*)*\(primary\)/i
+  );
+  if (rawPrimary?.[1]) {
+    const name = stripHtml(rawPrimary[1]).replace(/\s+/g, ' ').trim();
+    if (name) return name;
+  }
+
   const text = stripHtml(html);
   const compact = text.replace(/\s+/g, ' ').trim();
   const escaped = instrument.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -51,15 +58,14 @@ export function parsePrimaryAuthor(html, instrument) {
   const heading = compact.match(
     new RegExp(`${escaped}\\s+by\\s+(?:(?:Representative|Rep\\.?|Senator|Sen\\.?)\\s+)?(.+?)(?=\\s+\\||\\s+[A-Z][A-Z0-9/&'(). -]{1,80}:)`, 'i')
   );
-  if (heading?.[1]) return heading[1].replace(/\s*\(primary\)\s*$/i, '').replace(/\s+/g, ' ').trim();
-
-  const lines = text.split('\n').map(x => x.trim()).filter(Boolean);
-  const primaryLine = lines.find(x => /\(primary\)\s*$/i.test(x));
-  if (primaryLine) {
-    return primaryLine.replace(/\s*\(primary\)\s*$/i, '').replace(/^Authors?\s+/i, '').trim();
+  if (heading?.[1]) {
+    return heading[1].replace(/\s*\(primary\)\s*$/i, '').replace(/\s+/g, ' ').trim();
   }
 
-  return null;
+  const primaryText = compact.match(
+    /(?:Authors?\s+)?([A-Z][A-Za-z.'"’-]+(?:\s+[A-Z][A-Za-z.'"’-]+){1,5})\s+\(primary\)/i
+  );
+  return primaryText?.[1]?.replace(/\s+/g, ' ').trim() ?? null;
 }
 
 function chamber(value='') {
@@ -96,42 +102,81 @@ function makeAction(date, ch, page, action, order, defaultYear) {
   };
 }
 
+function cellText(cellHtml) {
+  return stripHtml(cellHtml).replace(/\s+/g, ' ').trim();
+}
+
 function parseTableActions(html, defaultYear) {
   const out = [];
   const dateRe = /^\d{1,2}\/\d{1,2}(?:\/(?:\d{2}|\d{4}))?$/;
+  const rows = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
 
-  for (const row of html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
-    const cells = [...row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
-      .map(m => stripHtml(m[1]).replace(/\s+/g, ' ').trim());
+  let headerMap = null;
 
-    if (cells.length < 3) continue;
+  for (const row of rows) {
+    const rawCells = [...row[1].matchAll(/<t([dh])\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)];
+    const cells = rawCells.map(m => cellText(m[2]));
 
-    const dateIndex = cells.findIndex(x => dateRe.test(x));
+    if (!cells.length) continue;
+
+    // Detect the actual Louisiana history header, so extra Video columns do not confuse Action.
+    if (cells.some(x => /^Date$/i.test(x)) && cells.some(x => /^Action$/i.test(x))) {
+      headerMap = {
+        date: cells.findIndex(x => /^Date$/i.test(x)),
+        chamber: cells.findIndex(x => /^Chamber$/i.test(x)),
+        journal: cells.findIndex(x => /^(Journal|Journal Page|Page)$/i.test(x)),
+        action: cells.findIndex(x => /^Action$/i.test(x))
+      };
+      continue;
+    }
+
+    let dateIndex = headerMap?.date ?? cells.findIndex(x => dateRe.test(x));
+    if (dateIndex < 0 || !dateRe.test(cells[dateIndex])) {
+      dateIndex = cells.findIndex(x => dateRe.test(x));
+    }
     if (dateIndex < 0) continue;
 
-    const chamberIndex = cells.findIndex((x, i) => i > dateIndex && chamber(x));
+    let chamberIndex = headerMap?.chamber ?? -1;
+    if (chamberIndex < 0 || !chamber(cells[chamberIndex])) {
+      chamberIndex = cells.findIndex((x, i) => i > dateIndex && chamber(x));
+    }
     if (chamberIndex < 0) continue;
 
-    let actionIndex = -1;
-    for (let i = cells.length - 1; i > chamberIndex; i--) {
-      const x = cells[i];
-      if (
+    let actionIndex = headerMap?.action ?? -1;
+
+    // If the header map is absent or the mapped cell is empty, choose the first plausible
+    // legislative text cell after chamber/page, never a video-only cell.
+    if (
+      actionIndex < 0 ||
+      actionIndex >= cells.length ||
+      !cells[actionIndex] ||
+      /\bVideo\b/i.test(cells[actionIndex])
+    ) {
+      actionIndex = cells.findIndex((x, i) =>
+        i > chamberIndex &&
         x &&
         x.length >= 6 &&
         !/^\d+$/.test(x) &&
         !chamber(x) &&
-        !/^(Date|Chamber|Journal|Page|Action)$/i.test(x)
-      ) {
-        actionIndex = i;
-        break;
-      }
+        !/\bVideo\b/i.test(x) &&
+        !/^(Date|Chamber|Journal|Journal Page|Page|Action)$/i.test(x)
+      );
     }
 
     if (actionIndex < 0) continue;
 
-    const page = cells
-      .slice(chamberIndex + 1, actionIndex)
-      .find(x => /^\d+$/.test(x)) ?? null;
+    let page = null;
+    if (
+      headerMap?.journal >= 0 &&
+      headerMap.journal < cells.length &&
+      /^\d+$/.test(cells[headerMap.journal])
+    ) {
+      page = cells[headerMap.journal];
+    } else {
+      page = cells
+        .slice(chamberIndex + 1, actionIndex)
+        .find(x => /^\d+$/.test(x)) ?? null;
+    }
 
     out.push(makeAction(
       cells[dateIndex],
@@ -153,40 +198,31 @@ function parseFlattenedActions(html, defaultYear) {
 
   for (let i=0;i<lines.length;i++) {
     if (!dateRe.test(lines[i])) continue;
-
     const date = lines[i];
-    let ch = null, chAt = -1;
 
+    let ch = null, chAt = -1;
     for (let j=i+1;j<=Math.min(i+4,lines.length-1);j++) {
       ch = chamber(lines[j]);
-      if (ch) {
-        chAt = j;
-        break;
-      }
+      if (ch) { chAt = j; break; }
     }
     if (!ch) continue;
 
     let page = null, action = null;
-
-    for (let j=chAt+1;j<=Math.min(chAt+8,lines.length-1);j++) {
+    for (let j=chAt+1;j<=Math.min(chAt+10,lines.length-1);j++) {
       const x = lines[j];
       if (dateRe.test(x)) break;
-      if (!page && /^\d+$/.test(x)) {
-        page = x;
-        continue;
-      }
+      if (!page && /^\d+$/.test(x)) { page = x; continue; }
       if (
         x.length >= 6 &&
-        !/^(Date|Chamber|Journal|Page|Action|sort history by ascending dates)$/i.test(x) &&
+        !/\bVideo\b/i.test(x) &&
+        !/^(Date|Chamber|Journal|Journal Page|Page|Action|sort history by ascending dates)$/i.test(x) &&
         !chamber(x)
       ) {
         action = x;
         break;
       }
     }
-
     if (!action) continue;
-
     out.push(makeAction(date, ch, page, action, out.length + 1, defaultYear));
   }
 
@@ -210,11 +246,8 @@ export function parseVoteLinks(html, defaultYear = null) {
     if (!/\bvote\b/i.test(text)) continue;
 
     let url;
-    try {
-      url = new URL(href, 'https://www.legis.la.gov/').toString();
-    } catch {
-      continue;
-    }
+    try { url = new URL(href, 'https://www.legis.la.gov/').toString(); }
+    catch { continue; }
 
     const key = `${text}|${url}`;
     if (seen.has(key)) continue;
