@@ -39,6 +39,14 @@ test('parses suffix after given name', () => {
   });
 });
 
+test('parses suffix before given name', () => {
+  assert.deepEqual(parseListingName('Landry, Jr. Terry'), {
+    displayName: 'Terry Landry Jr',
+    firstName: 'Terry',
+    lastName: 'Landry'
+  });
+});
+
 test('parses hyphenated surname', () => {
   assert.deepEqual(parseListingName('Jackson-Andrews, Katrina R.'), {
     displayName: 'Katrina R. Jackson-Andrews',
@@ -48,7 +56,7 @@ test('parses hyphenated surname', () => {
 });
 
 test('parses a House listing block', () => {
-  const html = `<div><a href="/H_Reps/members?ID=55">Fontenot, Bryan</a><div>District 55</div><div>Republican</div><div>406 W 3rd Street Suite 107 Thibodaux, LA 70301-3014</div><div>(985) 447-0999</div><div>hse055@legis.la.gov</div></div>`;
+  const html = `<div><a href="/H_Reps/members.aspx?ID=55">Fontenot, Bryan</a><div>District 55</div><div>Republican</div><div>406 W 3rd Street Suite 107 Thibodaux, LA 70301-3014</div><div>(985) 447-0999</div><div>hse055@legis.la.gov</div></div>`;
   const seats = parseLegislatorListing(html, { chamber: 'HOUSE', baseUrl: HOUSE_URL });
   assert.equal(seats.length, 1);
   assert.equal(seats[0].official_id, 'H055');
@@ -59,7 +67,7 @@ test('parses a House listing block', () => {
 });
 
 test('parses a Senate listing block', () => {
-  const html = `<section><a href="/smembers?ID=13">Hodges, Valarie</a><p>District 13</p><p>Republican</p><p>35055 La. Hwy. 16, Suite 2A Denham Springs, LA 70706</p><p>(225) 791-2199</p><p>sen13@legis.la.gov</p></section>`;
+  const html = `<section><a href="/smembers.aspx?ID=13">Hodges, Valarie</a><p>District 13</p><p>Republican</p><p>35055 La. Hwy. 16, Suite 2A Denham Springs, LA 70706</p><p>(225) 791-2199</p><p>sen13@legis.la.gov</p></section>`;
   const seats = parseLegislatorListing(html, { chamber: 'SENATE', baseUrl: SENATE_URL });
   assert.equal(seats.length, 1);
   assert.equal(seats[0].official_id, 'S013');
@@ -68,19 +76,19 @@ test('parses a Senate listing block', () => {
 });
 
 test('parses a vacant House seat', () => {
-  const html = `<section><a href="/H_Reps/members?ID=77">Vacant - District 77</a><p>District 77</p><p>312 South Jefferson Street Covington, LA 70433</p><p>(985) 893-6262</p></section>`;
+  const html = `<section><a href="/H_Reps/members.aspx?ID=77">Vacant - District 77</a><p>District 77</p><p>312 South Jefferson Street Covington, LA 70433</p><p>(985) 893-6262</p></section>`;
   const seats = parseLegislatorListing(html, { chamber: 'HOUSE', baseUrl: HOUSE_URL });
   assert.equal(seats.length, 1);
   assert.deepEqual(seats[0], {
     chamber: 'HOUSE',
     district_number: 77,
     vacant: true,
-    profile_url: 'https://house.louisiana.gov/H_Reps/members?ID=77'
+    profile_url: 'https://house.louisiana.gov/H_Reps/members.aspx?ID=77'
   });
 });
 
 test('parses a vacant Senate seat', () => {
-  const html = `<section><a href="/smembers?ID=14">Vacant - District 14</a><p>District 14</p><p>700 N. 10th Street Baton Rouge, LA 70802</p><p>(225)256-7756</p></section>`;
+  const html = `<section><a href="/smembers.aspx?ID=14">Vacant - District 14</a><p>District 14</p><p>700 N. 10th Street Baton Rouge, LA 70802</p><p>(225)256-7756</p></section>`;
   const seats = parseLegislatorListing(html, { chamber: 'SENATE', baseUrl: SENATE_URL });
   assert.equal(seats.length, 1);
   assert.equal(seats[0].district_number, 14);

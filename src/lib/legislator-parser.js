@@ -67,8 +67,13 @@ export function parseListingName(rawName) {
     }
 
     const givenTokens = given.split(/\s+/);
+    const givenHead = givenTokens[0];
     const givenTail = givenTokens[givenTokens.length - 1];
-    if (!suffix && SUFFIX_RE.test(givenTail)) {
+
+    if (!suffix && givenTokens.length > 1 && SUFFIX_RE.test(givenHead)) {
+      suffix = givenHead.replace(/\.$/, '');
+      given = givenTokens.slice(1).join(' ');
+    } else if (!suffix && SUFFIX_RE.test(givenTail)) {
       suffix = givenTail.replace(/\.$/, '');
       given = givenTokens.slice(0, -1).join(' ');
     }
@@ -115,7 +120,7 @@ function findSeatAnchors(html, chamber) {
   const anchorRe = /<a\b([^>]*?)href\s*=\s*(["'])(.*?)\2([^>]*)>([\s\S]*?)<\/a>/gi;
   const matches = [];
   let match;
-  const profileNeedle = chamber === 'HOUSE' ? /(?:H_Reps\/)?members(?:2)?\?ID=\d+/i : /smembers\?ID=\d+/i;
+  const profileNeedle = chamber === 'HOUSE' ? /(?:H_Reps\/)?members(?:2)?(?:\.aspx)?\?ID=\d+/i : /smembers(?:\.aspx)?\?ID=\d+/i;
 
   while ((match = anchorRe.exec(html)) !== null) {
     const href = decodeEntities(match[3]);
