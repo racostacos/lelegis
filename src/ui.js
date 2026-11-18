@@ -71,11 +71,11 @@ export function renderBills({bills=[],query='',signedIn=false,userName=null}){
  return page({title:query?`Bills matching ${query}`:'Bills',active:'bills',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="eyebrow">Bill tracker</div><h1>Bills</h1><form class="search" action="/bills" method="get"><input name="q" value="${esc(query)}" placeholder="Search bill number, subject, description or status"><button>Search</button></form></section><section style="margin-top:22px" class="stack">${cards||'<div class="empty">No matching bills.</div>'}</section></main>`});
 }
 
-export function renderBill(bill,{signedIn=false,position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0}={}){
+export function renderBill(bill,{signedIn=false,position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0,summaryText=null,summarySources=[]}={}){
  const stages=['Introduced','In Committee','On the Floor','Passed House','Passed Senate','Signed'];
  const latest=(bill.actions??[]).at(-1);
  const introduced=(bill.actions??[])[0]?.action_date??bill.created_at?.slice?.(0,10)??'';
- const summary=bill.official_description||'No summary is currently available from the official Louisiana Legislature record.';
+ const summary=summaryText||bill.official_description||'No summary is currently available from the official Louisiana Legislature record.';
  const status=bill.official_status||statusLabel(bill.normalized_status);
  const stageHtml=stages.map((name,i)=>`<div class="road-step ${i<stage?'done':i===stage?'current':''}"><div class="road-node"><span class="road-dot"></span>${i<stages.length-1?'<span class="road-line"></span>':''}</div><div class="road-name">${esc(name)}</div></div>`).join('');
 
@@ -133,7 +133,9 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
      <section class="bill-section">
        <div class="eyebrow" style="color:var(--gold)">Bill summary</div>
        <p class="summary-text">${esc(summary)}</p>
-       ${bill.source_url?`<a class="read-more" href="${esc(bill.source_url)}" target="_blank" rel="noreferrer">Read full bill record</a>`:''}
+       ${summarySources?.length
+         ? `<details style="margin-top:14px"><summary class="read-more" style="cursor:pointer">Official sources used</summary><div class="small muted" style="display:grid;gap:6px;margin-top:10px">${summarySources.map(src=>`<a href="${esc(src.url)}" target="_blank" rel="noreferrer">${esc(src.title)}</a>`).join('')}</div></details>`
+         : (bill.source_url?`<a class="read-more" href="${esc(bill.source_url)}" target="_blank" rel="noreferrer">Read full bill record</a>`:'')}
      </section>
 
      
