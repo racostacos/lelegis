@@ -1,0 +1,59 @@
+name: LeLegis automatic sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Lightweight live-session sync every 30 minutes on weekdays.
+    - cron: "*/30 * * * 1-5"
+    # Session discovery + roster maintenance once daily.
+    - cron: "17 10 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  live-sync:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/30 * * * 1-5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      LELEGIS_API_BASE: https://legis.le-comrade.org
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Sync changed bills and newly discovered floor votes
+        run: npm run sync:daily-actions
+
+  daily-maintenance:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 10 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Discover sessions
+        run: npm run sync:sessions
+
+      - name: Sync history-safe legislator roster
+        run: npm run sync:legislators

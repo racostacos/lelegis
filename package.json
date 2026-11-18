@@ -16,7 +16,10 @@
     "sync:source-ids": "node scripts/backfill-source-ids.js",
     "sync:floor-votes": "node scripts/import-floor-rollcalls.js",
     "test:source-ids": "node --test tests/source-ids.test.js",
-    "test:floor-votes": "node --test tests/floor-rollcall.test.js"
+    "test:floor-votes": "node --test tests/floor-rollcall.test.js",
+    "sync:sessions": "node scripts/sync-sessions.js",
+    "sync:daily-actions": "node scripts/sync-daily-actions.js",
+    "test:auto-sync": "node --test tests/session-parser.test.js tests/daily-actions-parser.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
