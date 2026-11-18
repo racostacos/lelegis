@@ -157,15 +157,23 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
          ${representativeComparison?`
            <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
              <div class="overline" style="margin-bottom:5px">Your representative</div>
-             <div style="font-weight:800;font-size:1rem;line-height:1.35">
-               Rep. ${esc(representativeComparison.last_name||representativeComparison.display_name)}
-               ${representativeComparison.matched?'matched':'broke from'} your position.
-             </div>
-             <div class="muted" style="margin-top:3px">
-               You voted ${esc(representativeComparison.user_position)}.
-               Rep. ${esc(representativeComparison.last_name||representativeComparison.display_name)}
-               voted ${esc(representativeComparison.representative_position)}.
-             </div>
+             ${representativeComparison.user_position
+               ? `
+                 <div style="font-weight:800;font-size:1rem;line-height:1.35">
+                   Rep. ${esc(representativeComparison.last_name||representativeComparison.display_name)}
+                   ${representativeComparison.matched?'matched':'broke from'} your position.
+                 </div>
+                 <div class="muted" style="margin-top:3px">
+                   You voted ${esc(representativeComparison.user_position)}.
+                   Rep. ${esc(representativeComparison.last_name||representativeComparison.display_name)}
+                   voted ${esc(representativeComparison.representative_position)}.
+                 </div>
+               `
+               : `
+                 <a href="#cast-vote" class="read-more" style="font-weight:800;font-size:1rem">
+                   See if your representative voted with you
+                 </a>
+               `}
            </div>
          `:''}
        </div>

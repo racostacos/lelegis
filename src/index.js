@@ -360,7 +360,7 @@ async function getBillCommunity(env,billId,userId=null){
 }
 
 async function getBillRepresentativeComparison(env,userId,billId,userPosition){
-  if(!userId||!userPosition) return null;
+  if(!userId) return null;
 
   const settings=await getSettings(env,userId);
   const district=Number(settings?.house_district??0);
@@ -418,9 +418,9 @@ async function getBillRepresentativeComparison(env,userId,billId,userPosition){
     display_name:member.display_name,
     last_name:member.last_name,
     district_number:member.district_number,
-    user_position:userPosition,
+    user_position:userPosition??null,
     representative_position:memberPosition,
-    matched:userPosition===memberPosition,
+    matched:userPosition?userPosition===memberPosition:null,
     motion:chosen.motion,
     vote_date:chosen.vote_date
   };
