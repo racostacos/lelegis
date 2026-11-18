@@ -686,17 +686,25 @@ async function fetchSummaryDocuments(bill){
 async function documentToText(env,doc){
   const r=await fetch(doc.url,{
     redirect:'follow',
-    headers:{'user-agent':'LeLegis/1.0 (+https://legis.le-comrade.org)'}
+    headers:{
+      'user-agent':'LeLegis/1.0 (+https://legis.le-comrade.org)',
+      accept:'application/pdf,*/*'
+    }
   });
-  if(!r.ok) return null;
+
+  if(!r.ok){
+    throw new Error(`DOCUMENT_FETCH_HTTP_${r.status}: ${doc.title}`);
+  }
 
   const bytes=await r.arrayBuffer();
-  const contentType=r.headers.get('content-type')||'application/pdf';
+  if(!bytes.byteLength){
+    throw new Error(`DOCUMENT_EMPTY: ${doc.title}`);
+  }
 
   const converted=await env.AI.toMarkdown(
     {
-      name:`${doc.title.replace(/[^a-z0-9]+/gi,'-').slice(0,80)||'document'}.pdf`,
-      blob:new Blob([bytes],{type:contentType})
+      name:'document.pdf',
+      blob:new Blob([bytes],{type:'application/pdf'})
     },
     {
       conversionOptions:{
@@ -707,12 +715,31 @@ async function documentToText(env,doc){
   );
 
   const result=Array.isArray(converted)?converted[0]:converted;
-  const text=String(result?.data??'').replace(/\u0000/g,'').trim();
-  if(!text) return null;
 
-  return {...doc,text:text.slice(0,30000)};
+  if(!result){
+    throw new Error(`TOMARKDOWN_NO_RESULT: ${doc.title}`);
+  }
+
+  if(result.format==='error'){
+    throw new Error(`TOMARKDOWN_ERROR: ${result.error||'unknown conversion error'}: ${doc.title}`);
+  }
+
+  const text=String(result.data??'').replace(/\u0000/g,'').trim();
+  if(!text){
+    throw new Error(`TOMARKDOWN_EMPTY_TEXT: ${doc.title}`);
+  }
+
+  return {
+    ...doc,
+    text:text.slice(0,30000),
+    conversion:{
+      format:result.format??null,
+      mimetype:result.mimetype??result.mimeType??null,
+      tokens:Number(result.tokens??0)||null,
+      source_bytes:bytes.byteLength
+    }
+  };
 }
-
 function compactGeneratedSummary(value=''){
   let text=String(value??'')
     .replace(/^#+\s*/gm,'')
@@ -736,20 +763,42 @@ function extractAiText(result){
   if(typeof result?.response==='string') return result.response;
   if(typeof result?.result==='string') return result.result;
   if(typeof result?.output_text==='string') return result.output_text;
-  if(typeof result?.choices?.[0]?.message?.content==='string') return result.choices[0].message.content;
+
+  const content=result?.choices?.[0]?.message?.content;
+  if(typeof content==='string') return content;
+  if(Array.isArray(content)){
+    return content
+      .map(part=>typeof part==='string'?part:(part?.text??part?.content??''))
+      .filter(Boolean)
+      .join('\n');
+  }
+
   return '';
 }
-
 async function generateBillSummary(env,bill,documents){
   const converted=[];
+  const conversionErrors=[];
+
   for(const doc of documents){
     try{
       const item=await documentToText(env,doc);
       if(item) converted.push(item);
-    }catch{}
+    }catch(err){
+      conversionErrors.push({
+        title:doc.title,
+        url:doc.url,
+        error:String(err?.message??err)
+      });
+    }
   }
 
-  if(!converted.length) return null;
+  if(!converted.length){
+    return {
+      ok:false,
+      reason:'NO_DOCUMENT_TEXT',
+      conversion_errors:conversionErrors
+    };
+  }
 
   const sourcePack=converted.map((doc,i)=>
     `SOURCE ${i+1}: ${doc.title}\n${doc.text}`
@@ -789,24 +838,58 @@ Effective date: ${bill.effective_date??''}
 OFFICIAL LOUISIANA SOURCES:
 ${sourcePack}`;
 
-  const result=await env.AI.run(SUMMARY_MODEL,{
-    messages:[
-      {role:'system',content:'Produce accurate, neutral, source-grounded legislative summaries for the public.'},
-      {role:'user',content:prompt}
-    ],
-    temperature:0.15,
-    max_completion_tokens:350
-  });
+  let result;
+  try{
+    result=await env.AI.run(SUMMARY_MODEL,{
+      messages:[
+        {
+          role:'system',
+          content:'Produce accurate, neutral, source-grounded legislative summaries for the public. Return only the final paragraph.'
+        },
+        {role:'user',content:prompt}
+      ],
+      chat_template_kwargs:{
+        enable_thinking:false
+      },
+      temperature:0.1,
+      max_completion_tokens:700
+    });
+  }catch(err){
+    return {
+      ok:false,
+      reason:'MODEL_ERROR',
+      model_error:String(err?.message??err),
+      converted_documents:converted.map(({title,url,conversion})=>({title,url,conversion})),
+      conversion_errors:conversionErrors
+    };
+  }
 
-  const summary=compactGeneratedSummary(extractAiText(result));
-  if(summary.split(/\s+/).length<35) return null;
+  const rawText=extractAiText(result);
+  const summary=compactGeneratedSummary(rawText);
+
+  if(summary.split(/\s+/).filter(Boolean).length<35){
+    return {
+      ok:false,
+      reason:'MODEL_EMPTY_OR_TOO_SHORT',
+      raw_response_shape:{
+        type:typeof result,
+        keys:result&&typeof result==='object'?Object.keys(result):[],
+        choice_keys:result?.choices?.[0]?Object.keys(result.choices[0]):[],
+        message_keys:result?.choices?.[0]?.message?Object.keys(result.choices[0].message):[]
+      },
+      raw_text_preview:String(rawText??'').slice(0,500),
+      converted_documents:converted.map(({title,url,conversion})=>({title,url,conversion})),
+      conversion_errors:conversionErrors
+    };
+  }
 
   return {
+    ok:true,
     summary,
-    used_documents:converted.map(({title,url})=>({title,url}))
+    used_documents:converted.map(({title,url,conversion})=>({title,url,conversion})),
+    conversion_errors:conversionErrors
   };
 }
-
 async function ensureBillSummary(env,bill,{force=false}={}){
   let documents=[];
   let discoveryError=null;
@@ -856,13 +939,19 @@ async function ensureBillSummary(env,bill,{force=false}={}){
   }
 
   const generated=await generateBillSummary(env,bill,documents);
-  if(!generated){
+  if(!generated?.ok){
     let cachedSources=[];
     try{cachedSources=JSON.parse(cached?.source_documents_json??'[]')}catch{}
     return {
       text:cached?.summary_text||bill.official_description||'No summary is currently available.',
       sources:cachedSources,
-      generated:Boolean(cached?.summary_text)
+      generated:Boolean(cached?.summary_text),
+      reason:generated?.reason||'GENERATION_FAILED',
+      model_error:generated?.model_error??null,
+      conversion_errors:generated?.conversion_errors??[],
+      converted_documents:generated?.converted_documents??[],
+      raw_response_shape:generated?.raw_response_shape??null,
+      raw_text_preview:generated?.raw_text_preview??null
     };
   }
 
@@ -880,13 +969,13 @@ async function ensureBillSummary(env,bill,{force=false}={}){
     bill.id,
     generated.summary,
     signature,
-    JSON.stringify(generated.used_documents),
+    JSON.stringify(generated.used_documents.map(({title,url})=>({title,url}))),
     SUMMARY_MODEL
   ).run();
 
   return {
     text:generated.summary,
-    sources:generated.used_documents,
+    sources:generated.used_documents.map(({title,url})=>({title,url})),
     generated:true
   };
 }
