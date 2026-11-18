@@ -1,4 +1,5 @@
 import { refreshBillDetailsForRequest } from './lib/bill-detail-sync.js';
+import { fetchSummaryDocuments as fetchOfficialSummaryDocuments } from './lib/bill-summary-docs.js';
 import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
 import {
@@ -811,7 +812,7 @@ async function ensureBillSummary(env,bill,{force=false}={}){
   let discoveryError=null;
 
   try{
-    documents=await fetchSummaryDocuments(bill);
+    documents=await fetchOfficialSummaryDocuments(bill);
   }catch(err){
     discoveryError=String(err?.message??err);
   }
@@ -1041,6 +1042,15 @@ export default {
 
       const bill=await getBillDetail(env,instrument);
       if(!bill)return json({ok:false,error:'Bill not found'},404);
+
+      if(url.searchParams.get('debug')==='1'){
+        try{
+          const discovery=await fetchOfficialSummaryDocuments(bill,fetch,{includeDebug:true});
+          return json({ok:true,discovery});
+        }catch(err){
+          return json({ok:false,error:'Summary discovery debug failed',detail:String(err?.message??err)},500);
+        }
+      }
 
       try{
         const summary=await ensureBillSummary(env,bill,{force:url.searchParams.get('refresh')==='1'});
