@@ -1,6 +1,6 @@
 import { refreshBillDetailsForRequest } from './lib/bill-detail-sync.js';
 import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
-import { createAuth, getSession, beginSocialSignIn, authProviders } from './auth.js';
+import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
 import {
   renderHome, renderBills, renderBill, renderLegislators, renderLegislator,
   renderLogin, renderAccount, renderNotFound
@@ -113,10 +113,9 @@ export default {
       catch(err){return json({ok:false,error:'Authentication is not configured',detail:String(err?.message??err)},503)}
     }
 
-    if(url.pathname==='/auth/google'||url.pathname==='/auth/apple'){
-      const provider=url.pathname.endsWith('google')?'google':'apple';
-      try{return await beginSocialSignIn(env,request,provider,safeNext(url.searchParams.get('next')))}
-      catch(err){return html(renderNotFound(`Could not start ${provider} sign-in: ${String(err?.message??err)}`),500)}
+    if(url.pathname==='/auth/google'){
+      try{return await beginGoogleSignIn(env,request,safeNext(url.searchParams.get('next')))}
+      catch(err){return html(renderNotFound(`Could not start Google sign-in: ${String(err?.message??err)}`),500)}
     }
 
     if(url.pathname==='/api/health')return json({ok:true,service:'LeLegis',databaseBound:true,authConfigured:Boolean(env.BETTER_AUTH_SECRET),providers:authProviders(env)});

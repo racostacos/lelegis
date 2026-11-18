@@ -118,11 +118,11 @@ export function renderLegislator(profile, { signedIn = false, alignment = null }
 }
 
 export function renderLogin({ providers, next = '/account' }) {
-  const buttons=[];
-  if(providers.google) buttons.push(`<a class="button google" href="/auth/google?next=${encodeURIComponent(next)}">Continue with Google</a>`);
-  if(providers.apple) buttons.push(`<a class="button apple" href="/auth/apple?next=${encodeURIComponent(next)}">Continue with Apple</a>`);
-  const missing=!buttons.length?'<div class="empty">Sign-in providers are not configured yet.</div>':'';
-  return page({title:'Sign in',active:'account',body:`<main class="wrap"><section class="hero" style="max-width:620px;margin:auto"><div class="eyebrow">My LeLegis</div><h1>Sign in</h1><p class="lede">Save your Yes/No positions and compare them with Louisiana lawmakers. Your saved positions are private by default.</p><div class="auth-buttons">${buttons.join('')}${missing}</div></section></main>`});
+  const button = providers.google
+    ? `<a class="button google" href="/auth/google?next=${encodeURIComponent(next)}">Continue with Google</a>`
+    : '<div class="empty">Google sign-in is not configured yet.</div>';
+
+  return page({title:'Sign in',active:'account',body:`<main class="wrap"><section class="hero" style="max-width:620px;margin:auto"><div class="eyebrow">My LeLegis</div><h1>Sign in</h1><p class="lede">Save your Yes/No positions and compare them with Louisiana lawmakers. Your saved positions are private by default.</p><div class="auth-buttons">${button}</div></section></main>`});
 }
 
 export function renderAccount({ user, positions = [], alignment = [] }) {
