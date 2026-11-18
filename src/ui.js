@@ -1,5 +1,18 @@
 const esc=(value='')=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 
+const partyInitial=party=>{
+  const p=String(party??'').trim().toUpperCase();
+  if(['D','DEM','DEMOCRAT','DEMOCRATIC'].includes(p))return 'D';
+  if(['R','REP','REPUBLICAN'].includes(p))return 'R';
+  if(['I','IND','INDEPENDENT'].includes(p))return 'I';
+  return 'O';
+};
+
+const lawmakerName=(person,name=null)=>{
+  const display=name??person?.display_name??'';
+  return `${esc(display)} (${partyInitial(person?.party)})`;
+};
+
 const fmtDate=value=>{if(!value)return'';const d=new Date(`${value}T12:00:00`);if(Number.isNaN(d.getTime()))return esc(value);return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
 const statusLabel=value=>String(value??'UNKNOWN').replaceAll('_',' ');
 const voteClass=vote=>{const v=String(vote??'').toUpperCase();if(v==='YEA'||v==='YES')return'vote-yea';if(v==='NAY'||v==='NO')return'vote-nay';if(v==='ABSENT')return'vote-absent';return'vote-other'};
@@ -202,7 +215,7 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
        <div class="bill-facts">
          <div class="bill-fact"><div class="bill-fact-label">Status</div><div class="bill-fact-value">${esc(status)}</div></div>
          <div class="bill-fact"><div class="bill-fact-label">Introduced</div><div class="bill-fact-value">${fmtDate(introduced)}</div></div>
-         <div class="bill-fact"><div class="bill-fact-label">Primary author</div><div class="bill-fact-value">${bill.primary_author?`<a href="/legislators/${bill.primary_author.id}">${esc(bill.primary_author.display_name)}</a>`:'Not available'}</div></div>
+         <div class="bill-fact"><div class="bill-fact-label">Primary author</div><div class="bill-fact-value">${bill.primary_author?`<a href="/legislators/${bill.primary_author.id}">${lawmakerName(bill.primary_author)}</a>`:'Not available'}</div></div>
          ${bill.act_number?`<div class="bill-fact"><div class="bill-fact-label">Act</div><div class="bill-fact-value">Act ${esc(bill.act_number)}</div></div>`:''}
        </div>
        ${bill.source_url?`<a class="button secondary" style="display:block;text-align:center;margin-top:18px" href="${esc(bill.source_url)}" target="_blank" rel="noreferrer">Full bill record on legis.la.gov</a>`:''}
@@ -238,12 +251,12 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
              ${representativeComparison.user_position
                ? `
                  <div style="font-weight:800;font-size:1rem;line-height:1.35">
-                   Rep. ${esc(representativeComparison.last_name||representativeComparison.display_name)}
+                   Rep. ${lawmakerName(representativeComparison,representativeComparison.last_name||representativeComparison.display_name)}
                    ${representativeComparison.matched?'matched':'broke from'} your position.
                  </div>
                  <div class="muted" style="margin-top:3px">
                    You voted ${esc(representativeComparison.user_position)}.
-                   Rep. ${esc(representativeComparison.last_name||representativeComparison.display_name)}
+                   Rep. ${lawmakerName(representativeComparison,representativeComparison.last_name||representativeComparison.display_name)}
                    voted ${esc(representativeComparison.representative_position)}.
                  </div>
                `
@@ -337,7 +350,7 @@ document.addEventListener('click',async e=>{
 }
 
 export function renderLegislators({legislators=[],signedIn=false,userName=null}){
- const cards=legislators.map(l=>`<a class="bill-card" href="/legislators/${l.id}"><div class="profile-head"><div class="avatar">${esc((l.first_name?.[0]||'')+(l.last_name?.[0]||''))}</div><div><h3>${esc(l.display_name)}</h3><div class="muted">${esc(l.party||'')} · ${esc(l.chamber)} District ${esc(l.district_number)}</div></div></div></a>`).join('');
+ const cards=legislators.map(l=>`<a class="bill-card" href="/legislators/${l.id}"><div class="profile-head"><div class="avatar">${esc((l.first_name?.[0]||'')+(l.last_name?.[0]||''))}</div><div><h3>${lawmakerName(l)}</h3><div class="muted">${esc(l.chamber)} District ${esc(l.district_number)}</div></div></div></a>`).join('');
  return page({title:'Legislators',active:'legislators',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="eyebrow">Louisiana lawmakers</div><h1>Legislators</h1><p class="lede">Browse lawmakers, authored bills, and recorded votes.</p></section><section class="stack" style="margin-top:22px">${cards||'<div class="empty">No legislators found.</div>'}</section></main>`});
 }
 
@@ -345,7 +358,7 @@ export function renderLegislator(profile,{signedIn=false,alignment=null,userName
  const bills=(profile.authored_bills??[]).map(b=>`<a class="bill-card" href="/bills/${encodeURIComponent(b.instrument)}"><div class="meta"><span class="chip">${esc(b.instrument)}</span><span class="chip status">${esc(statusLabel(b.normalized_status))}</span></div><h3 style="margin-top:10px">${esc(b.subject||'No subject')}</h3><div class="small muted">${esc(b.official_description||'')}</div></a>`).join('');
  const votes=(profile.recent_votes??[]).map(v=>`<a class="bill-card" href="/bills/${encodeURIComponent(v.instrument)}"><div class="meta"><span class="chip">${esc(v.instrument)}</span><span class="chip ${voteClass(v.vote)}">${esc(v.vote)}</span><span class="chip">${esc(v.event_type)}</span></div><div style="margin-top:10px"><strong>${esc(v.motion||'Vote')}</strong></div><div class="small muted">${fmtDate(v.vote_date)} · ${esc(v.subject||'')}</div></a>`).join('');
  const align=alignment?`<section class="panel"><div class="eyebrow">Your alignment</div><div class="align-score">${esc(alignment.percent)}%</div><div class="small muted">${esc(alignment.matches)} agreements · ${esc(alignment.disagreements)} disagreements · ${esc(alignment.comparable)} comparable bills</div></section>`:'';
- return page({title:profile.display_name,active:'legislators',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="profile-head"><div class="avatar">${esc((profile.first_name?.[0]||'')+(profile.last_name?.[0]||''))}</div><div><div class="eyebrow">${esc(profile.chamber)} District ${esc(profile.district_number)}</div><h1 style="margin-bottom:8px">${esc(profile.display_name)}</h1><div class="muted">${esc(profile.party||'')}</div></div></div></section><div class="grid"><section class="panel"><h2>Recent votes</h2><div class="stack">${votes||'<div class="empty">No recorded votes.</div>'}</div></section><aside class="stack">${align}<section class="panel"><h2>Authored bills</h2><div class="stack">${bills||'<div class="empty">No authored bills recorded.</div>'}</div></section></aside></div></main>`});
+ return page({title:profile.display_name,active:'legislators',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="profile-head"><div class="avatar">${esc((profile.first_name?.[0]||'')+(profile.last_name?.[0]||''))}</div><div><div class="eyebrow">${esc(profile.chamber)} District ${esc(profile.district_number)}</div><h1 style="margin-bottom:8px">${lawmakerName(profile)}</h1></div></div></section><div class="grid"><section class="panel"><h2>Recent votes</h2><div class="stack">${votes||'<div class="empty">No recorded votes.</div>'}</div></section><aside class="stack">${align}<section class="panel"><h2>Authored bills</h2><div class="stack">${bills||'<div class="empty">No authored bills recorded.</div>'}</div></section></aside></div></main>`});
 }
 
 export function renderLogin({providers,next='/account'}){
@@ -355,8 +368,8 @@ export function renderLogin({providers,next='/account'}){
 
 export function renderAccount({user,positions=[],alignment=[],settings={},members=[],stats={}}){
  const pos=positions.map(p=>`<a class="bill-card" href="/bills/${encodeURIComponent(p.instrument)}"><div class="meta"><span class="chip">${esc(p.instrument)}</span><span class="chip ${voteClass(p.position)}">${esc(p.position)}</span></div><h3 style="margin-top:10px">${esc(p.subject||'')}</h3></a>`).join('');
- const membersHtml=members.map(m=>`<a class="member-card" href="/legislators/${m.legislator_id}"><div class="avatar" style="width:54px;height:54px;font-size:20px">${esc((m.first_name?.[0]||'')+(m.last_name?.[0]||''))}</div><div><div class="eyebrow">${esc(m.chamber)} District ${esc(m.district_number)}</div><h3 style="margin:4px 0">${esc(m.display_name)}</h3><div class="small muted">${esc(m.party||'')}</div></div><div class="member-score">${m.alignment?.comparable?`${esc(m.alignment.percent)}%`:'—'}<small>alignment</small></div></a>`).join('');
- const allMatches=alignment.slice(0,10).map(a=>`<a class="align-row" href="/legislators/${a.legislator_id}" style="text-decoration:none"><div><strong>${esc(a.display_name)}</strong><div class="small muted">${esc(a.party||'')} · ${esc(a.chamber)} District ${esc(a.district_number)} · ${esc(a.comparable)} comparable</div></div><div class="align-score">${esc(a.percent)}%</div></a>`).join('');
+ const membersHtml=members.map(m=>`<a class="member-card" href="/legislators/${m.legislator_id}"><div class="avatar" style="width:54px;height:54px;font-size:20px">${esc((m.first_name?.[0]||'')+(m.last_name?.[0]||''))}</div><div><div class="eyebrow">${esc(m.chamber)} District ${esc(m.district_number)}</div><h3 style="margin:4px 0">${lawmakerName(m)}</h3></div><div class="member-score">${m.alignment?.comparable?`${esc(m.alignment.percent)}%`:'—'}<small>alignment</small></div></a>`).join('');
+ const allMatches=alignment.slice(0,10).map(a=>`<a class="align-row" href="/legislators/${a.legislator_id}" style="text-decoration:none"><div><strong>${lawmakerName(a)}</strong><div class="small muted">${esc(a.chamber)} District ${esc(a.district_number)} · ${esc(a.comparable)} comparable</div></div><div class="align-score">${esc(a.percent)}%</div></a>`).join('');
  const houseVal=settings.house_district??'';
  const senateVal=settings.senate_district??'';
  return page({title:'Account',active:'account',signedIn:true,userName:user.name,body:`<main class="wrap">
