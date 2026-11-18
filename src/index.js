@@ -1222,7 +1222,18 @@ export default {
     if(apiBillMatch&&request.method==='GET'){
       let instrument;try{instrument=decodeURIComponent(apiBillMatch[1]).trim().toUpperCase()}catch{return json({ok:false,error:'Invalid instrument'},400)}
       if(!validInstrument(instrument))return json({ok:false,error:'Invalid instrument'},400);
-      try{await refreshBillForRequest(env.DB,instrument);await refreshBillDetailsForRequest(env.DB,instrument);const bill=await getBillDetail(env,instrument);if(!bill)return json({ok:false,error:'Bill not found',instrument},404);return json({ok:true,bill})}
+      try{
+        await refreshBillForRequest(env.DB,instrument);
+        await refreshBillDetailsForRequest(
+          env.DB,
+          instrument,
+          fetch,
+          {force:url.searchParams.get('refresh')==='1'}
+        );
+        const bill=await getBillDetail(env,instrument);
+        if(!bill)return json({ok:false,error:'Bill not found',instrument},404);
+        return json({ok:true,bill});
+      }
       catch(err){return json({ok:false,error:'Failed to load bill',detail:String(err?.message??err)},500)}
     }
 

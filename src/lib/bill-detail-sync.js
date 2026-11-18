@@ -216,7 +216,7 @@ async function writeDetails(db, bill, details) {
   if (statements.length) await db.batch(statements);
 }
 
-export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = fetch) {
+export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = fetch, { force = false } = {}) {
   const bill = await db.prepare(
     `SELECT b.id, b.instrument, b.origin_chamber, b.official_bill_id, b.official_status, b.detail_synced_at,
             s.id AS session_id, s.session_code, s.start_date, s.is_active
@@ -243,6 +243,7 @@ export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = f
   ).bind(bill.id).first();
 
   const shouldRefresh =
+    force ||
     !Number(completeness?.has_actions ?? 0) ||
     !Number(completeness?.has_primary_author ?? 0) ||
     !completeness?.act_number ||

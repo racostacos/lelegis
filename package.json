@@ -21,9 +21,11 @@
     "sync:daily-actions": "node scripts/sync-daily-actions.js",
     "test:auto-sync": "node --test tests/session-parser.test.js tests/daily-actions-parser.test.js",
     "sync:committee-votes": "node scripts/import-committee-votes.js",
-    "test:committee-votes": "node --test tests/committee-vote-parser.test.js"
+    "test:committee-votes": "node --test tests/committee-vote-parser.test.js",
+    "backfill:floor-votes": "node scripts/backfill-floor-votes.js"
   },
   "devDependencies": {
+    "shpjs": "^6.2.0",
     "wrangler": "^4.0.0"
   },
   "dependencies": {
