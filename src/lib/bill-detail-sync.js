@@ -21,24 +21,35 @@ async function resolvePrimaryAuthor(db, chamber, authorText) {
   if (target.length < 2) return null;
 
   const { results } = await db.prepare(
-    `SELECT id, display_name
+    `SELECT id, display_name, is_active
        FROM legislators
-      WHERE chamber = ?1 AND is_active = 1`
+      WHERE chamber = ?1`
   ).bind(chamber).all();
 
-  const exact = (results ?? []).filter(
-    (r) => nameTokens(r.display_name).join(' ') === target.join(' ')
-  );
-  if (exact.length === 1) return exact[0];
+  const scored = (results ?? [])
+    .map(r => {
+      const tokens = nameTokens(r.display_name);
+      let score = 0;
 
-  const first = target[0];
-  const last = target[target.length - 1];
-  const loose = (results ?? []).filter((r) => {
-    const tokens = nameTokens(r.display_name);
-    return tokens[0] === first && tokens[tokens.length - 1] === last;
-  });
+      if (tokens.join(' ') === target.join(' ')) score = 100;
+      else if (
+        tokens[0] === target[0] &&
+        tokens[tokens.length - 1] === target[target.length - 1]
+      ) score = 80;
+      else if (
+        tokens[tokens.length - 1] === target[target.length - 1] &&
+        tokens.some(t => target.includes(t))
+      ) score = 50;
 
-  return loose.length === 1 ? loose[0] : null;
+      if (r.is_active) score += 1;
+      return { ...r, score };
+    })
+    .filter(r => r.score > 0)
+    .sort((a,b) => b.score - a.score);
+
+  if (!scored.length) return null;
+  if (scored.length > 1 && scored[0].score === scored[1].score) return null;
+  return scored[0];
 }
 
 async function committeeIdForShortName(db, shortName) {
@@ -47,6 +58,29 @@ async function committeeIdForShortName(db, shortName) {
     `SELECT id FROM committees WHERE UPPER(short_name) = UPPER(?1) LIMIT 1`
   ).bind(shortName).first();
   return row?.id ?? null;
+}
+
+function extractActNumber(status, actions) {
+  const candidates = [
+    status,
+    ...actions.map(a => a.official_text)
+  ].filter(Boolean);
+
+  for (const text of candidates) {
+    const m = text.match(/\bAct(?:\s+No\.?)?\s*(\d+)\b/i);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+function extractEffectiveDate(actions) {
+  for (const a of actions) {
+    const m = a.official_text.match(/Effective date:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+    if (!m) continue;
+    const [month, day, year] = m[1].split('/').map(Number);
+    return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
+  return null;
 }
 
 async function writeDetails(db, bill, details) {
@@ -131,13 +165,18 @@ async function writeDetails(db, bill, details) {
     }
   }
 
+  const actNumber = extractActNumber(bill.official_status, details.actions);
+  const effectiveDate = extractEffectiveDate(details.actions);
+
   statements.push(
     db.prepare(
       `UPDATE bills
           SET detail_synced_at = CASE WHEN ?2 > 0 THEN CURRENT_TIMESTAMP ELSE NULL END,
+              act_number = COALESCE(act_number, ?3),
+              effective_date = COALESCE(effective_date, ?4),
               updated_at = CURRENT_TIMESTAMP
         WHERE id = ?1`
-    ).bind(bill.id, details.actions.length)
+    ).bind(bill.id, details.actions.length, actNumber, effectiveDate)
   );
 
   if (statements.length) await db.batch(statements);
@@ -145,7 +184,7 @@ async function writeDetails(db, bill, details) {
 
 export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = fetch) {
   const bill = await db.prepare(
-    `SELECT b.id, b.instrument, b.origin_chamber, b.detail_synced_at,
+    `SELECT b.id, b.instrument, b.origin_chamber, b.official_status, b.detail_synced_at,
             s.id AS session_id, s.session_code, s.start_date, s.is_active
        FROM bills b
        JOIN sessions s ON s.id = b.session_id

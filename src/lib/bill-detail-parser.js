@@ -16,7 +16,7 @@ function stripHtml(value = '') {
       .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
       .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/(?:div|p|li|tr|td|th|h[1-6]|option|section|span)>/gi, '\n')
+      .replace(/<\/(?:div|p|li|tr|td|th|h[1-6]|option|section|span|a)>/gi, '\n')
       .replace(/<[^>]+>/g, ' ')
   )
     .replace(/\r/g, '')
@@ -69,7 +69,84 @@ function chamber(value='') {
   return null;
 }
 
-export function parseActionHistory(html, defaultYear = null) {
+function normalizeAction(action='') {
+  return /signed by the governor/i.test(action) ? 'SIGNED' :
+    /effective date/i.test(action) ? 'EFFECTIVE_DATE_SET' :
+    /sent to the governor/i.test(action) ? 'SENT_TO_GOVERNOR' :
+    /reported/i.test(action) ? 'REPORTED' :
+    /referred to/i.test(action) ? 'REFERRED_TO_COMMITTEE' :
+    /enrolled/i.test(action) ? 'ENROLLED' :
+    /prefiled/i.test(action) ? 'PREFILED' :
+    /received in the senate/i.test(action) ? 'RECEIVED_IN_SENATE' :
+    /received from the senate/i.test(action) ? 'RETURNED_TO_HOUSE' :
+    /finally passed|passed by a vote/i.test(action) ? 'PASSED_CHAMBER' :
+    'OTHER';
+}
+
+function makeAction(date, ch, page, action, order, defaultYear) {
+  return {
+    action_date: isoDate(date, defaultYear),
+    chamber: ch,
+    official_text: action,
+    normalized_action: normalizeAction(action),
+    journal_page: page || null,
+    journal_url: null,
+    video_url: null,
+    source_order: order
+  };
+}
+
+function parseTableActions(html, defaultYear) {
+  const out = [];
+  const dateRe = /^\d{1,2}\/\d{1,2}(?:\/(?:\d{2}|\d{4}))?$/;
+
+  for (const row of html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map(m => stripHtml(m[1]).replace(/\s+/g, ' ').trim());
+
+    if (cells.length < 3) continue;
+
+    const dateIndex = cells.findIndex(x => dateRe.test(x));
+    if (dateIndex < 0) continue;
+
+    const chamberIndex = cells.findIndex((x, i) => i > dateIndex && chamber(x));
+    if (chamberIndex < 0) continue;
+
+    let actionIndex = -1;
+    for (let i = cells.length - 1; i > chamberIndex; i--) {
+      const x = cells[i];
+      if (
+        x &&
+        x.length >= 6 &&
+        !/^\d+$/.test(x) &&
+        !chamber(x) &&
+        !/^(Date|Chamber|Journal|Page|Action)$/i.test(x)
+      ) {
+        actionIndex = i;
+        break;
+      }
+    }
+
+    if (actionIndex < 0) continue;
+
+    const page = cells
+      .slice(chamberIndex + 1, actionIndex)
+      .find(x => /^\d+$/.test(x)) ?? null;
+
+    out.push(makeAction(
+      cells[dateIndex],
+      chamber(cells[chamberIndex]),
+      page,
+      cells[actionIndex],
+      out.length + 1,
+      defaultYear
+    ));
+  }
+
+  return out;
+}
+
+function parseFlattenedActions(html, defaultYear) {
   const lines = stripHtml(html).split('\n').map(x => x.replace(/\s+/g,' ').trim()).filter(Boolean);
   const out = [];
   const dateRe = /^\d{1,2}\/\d{1,2}(?:\/(?:\d{2}|\d{4}))?$/;
@@ -110,29 +187,15 @@ export function parseActionHistory(html, defaultYear = null) {
 
     if (!action) continue;
 
-    out.push({
-      action_date: isoDate(date, defaultYear),
-      chamber: ch,
-      official_text: action,
-      normalized_action:
-        /signed by the governor/i.test(action) ? 'SIGNED' :
-        /effective date/i.test(action) ? 'EFFECTIVE_DATE_SET' :
-        /reported/i.test(action) ? 'REPORTED' :
-        /referred to/i.test(action) ? 'REFERRED_TO_COMMITTEE' :
-        /enrolled/i.test(action) ? 'ENROLLED' :
-        /prefiled/i.test(action) ? 'PREFILED' :
-        /received in the senate/i.test(action) ? 'RECEIVED_IN_SENATE' :
-        /received from the senate/i.test(action) ? 'RETURNED_TO_HOUSE' :
-        /finally passed|passed by a vote/i.test(action) ? 'PASSED_CHAMBER' :
-        'OTHER',
-      journal_page: page,
-      journal_url: null,
-      video_url: null,
-      source_order: out.length + 1
-    });
+    out.push(makeAction(date, ch, page, action, out.length + 1, defaultYear));
   }
 
   return out;
+}
+
+export function parseActionHistory(html, defaultYear = null) {
+  const table = parseTableActions(html, defaultYear);
+  return table.length ? table : parseFlattenedActions(html, defaultYear);
 }
 
 export function parseVoteLinks(html, defaultYear = null) {
