@@ -10,7 +10,7 @@ export function sqlString(value) {
 export function runD1Json(sql) {
   const result = spawnSync(
     'npx',
-    ['wrangler', 'd1', 'execute', 'lelegis', '--remote', '--json', `--command=${sql}`],
+    ['wrangler', 'd1', 'execute', 'lelegis', '--remote', '--yes', '--json', `--command=${sql}`],
     { encoding: 'utf8', shell: process.platform === 'win32' }
   );
 
@@ -31,7 +31,7 @@ export function runD1SqlFile(sql, prefix = 'lelegis-sync-') {
 
     const result = spawnSync(
       'npx',
-      ['wrangler', 'd1', 'execute', 'lelegis', '--remote', `--file=${file}`],
+      ['wrangler', 'd1', 'execute', 'lelegis', '--remote', '--yes', `--file=${file}`],
       { stdio: 'inherit', shell: process.platform === 'win32' }
     );
 
