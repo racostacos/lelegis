@@ -26,11 +26,20 @@ function stripHtml(value = '') {
     .trim();
 }
 
-export function isoDate(value) {
-  const m = String(value).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+export function isoDate(value, defaultYear = null) {
+  const m = String(value).trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?$/);
   if (!m) return null;
-  let year = Number(m[3]);
-  if (year < 100) year += 2000;
+
+  let year;
+  if (m[3]) {
+    year = Number(m[3]);
+    if (year < 100) year += 2000;
+  } else if (defaultYear) {
+    year = Number(defaultYear);
+  } else {
+    return null;
+  }
+
   return `${year}-${String(Number(m[1])).padStart(2, '0')}-${String(Number(m[2])).padStart(2, '0')}`;
 }
 
@@ -60,101 +69,227 @@ function chamber(value='') {
   return null;
 }
 
-export function parseActionHistory(html) {
+export function parseActionHistory(html, defaultYear = null) {
   const lines = stripHtml(html).split('\n').map(x => x.replace(/\s+/g,' ').trim()).filter(Boolean);
   const out = [];
+  const dateRe = /^\d{1,2}\/\d{1,2}(?:\/(?:\d{2}|\d{4}))?$/;
+
   for (let i=0;i<lines.length;i++) {
-    if (!/^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})$/.test(lines[i])) continue;
+    if (!dateRe.test(lines[i])) continue;
+
     const date = lines[i];
-    let ch = null, chAt=-1;
+    let ch = null, chAt = -1;
+
     for (let j=i+1;j<=Math.min(i+4,lines.length-1);j++) {
       ch = chamber(lines[j]);
-      if (ch) { chAt=j; break; }
+      if (ch) {
+        chAt = j;
+        break;
+      }
     }
     if (!ch) continue;
+
     let page = null, action = null;
-    for (let j=chAt+1;j<=Math.min(chAt+7,lines.length-1);j++) {
+
+    for (let j=chAt+1;j<=Math.min(chAt+8,lines.length-1);j++) {
       const x = lines[j];
-      if (/^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})$/.test(x)) break;
-      if (!page && /^\d+$/.test(x)) { page=x; continue; }
-      if (x.length >= 8 && !/^(Date|Chamber|Journal|Page|Action)$/i.test(x) && !chamber(x)) { action=x; break; }
+      if (dateRe.test(x)) break;
+      if (!page && /^\d+$/.test(x)) {
+        page = x;
+        continue;
+      }
+      if (
+        x.length >= 6 &&
+        !/^(Date|Chamber|Journal|Page|Action|sort history by ascending dates)$/i.test(x) &&
+        !chamber(x)
+      ) {
+        action = x;
+        break;
+      }
     }
+
     if (!action) continue;
+
     out.push({
-      action_date: isoDate(date),
+      action_date: isoDate(date, defaultYear),
       chamber: ch,
       official_text: action,
-      normalized_action: /signed by the governor/i.test(action) ? 'SIGNED' :
+      normalized_action:
+        /signed by the governor/i.test(action) ? 'SIGNED' :
         /effective date/i.test(action) ? 'EFFECTIVE_DATE_SET' :
         /reported/i.test(action) ? 'REPORTED' :
         /referred to/i.test(action) ? 'REFERRED_TO_COMMITTEE' :
         /enrolled/i.test(action) ? 'ENROLLED' :
-        /prefiled/i.test(action) ? 'PREFILED' : 'OTHER',
+        /prefiled/i.test(action) ? 'PREFILED' :
+        /received in the senate/i.test(action) ? 'RECEIVED_IN_SENATE' :
+        /received from the senate/i.test(action) ? 'RETURNED_TO_HOUSE' :
+        /finally passed|passed by a vote/i.test(action) ? 'PASSED_CHAMBER' :
+        'OTHER',
       journal_page: page,
       journal_url: null,
       video_url: null,
       source_order: out.length + 1
     });
   }
+
   return out;
 }
 
-export function parseVoteLinks(html) {
+export function parseVoteLinks(html, defaultYear = null) {
   const out = [];
   const seen = new Set();
   const re = /<a\b[^>]*href\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let m;
+
   while ((m = re.exec(html)) !== null) {
     const href = decodeEntities(m[2]);
     const text = stripHtml(m[3]).replace(/\s+/g,' ').trim();
     if (!/\bvote\b/i.test(text)) continue;
+
     let url;
-    try { url = new URL(href, 'https://www.legis.la.gov/').toString(); } catch { continue; }
+    try {
+      url = new URL(href, 'https://www.legis.la.gov/').toString();
+    } catch {
+      continue;
+    }
+
     const key = `${text}|${url}`;
     if (seen.has(key)) continue;
     seen.add(key);
+
     const seq = text.match(/#(\d+)/)?.[1] ?? null;
-    const ch = /^House Vote/i.test(text) ? 'HOUSE' : /^Senate Vote/i.test(text) ? 'SENATE' :
-      /\bH-[A-Z&]+\b/i.test(text) ? 'HOUSE' : /\bS-[A-Z&]+\b/i.test(text) ? 'SENATE' : null;
+    const ch =
+      /^House Vote/i.test(text) ? 'HOUSE' :
+      /^Senate Vote/i.test(text) ? 'SENATE' :
+      /\bH-[A-Z&]+\b/i.test(text) ? 'HOUSE' :
+      /\bS-[A-Z&]+\b/i.test(text) ? 'SENATE' :
+      null;
+
     const committee = text.match(/\b([HS]-[A-Z&]+)\b/i)?.[1]?.toUpperCase() ?? null;
-    const dateText = text.match(/\b(\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}))\b/)?.[1] ?? null;
+    const dateText = text.match(/\b(\d{1,2}\/\d{1,2}(?:\/(?:\d{2}|\d{4}))?)\b/)?.[1] ?? null;
     const motion = text.match(/\b(?:HB|SB|HCR|SCR|HR|SR)\s*\d+\s+(.+?)\s+\(#\d+\)/i)?.[1]?.trim() ?? null;
-    out.push({text,source_url:url,sequence_number:seq?Number(seq):null,chamber:ch,committee_short_name:committee,vote_date:dateText?isoDate(dateText):null,motion});
+
+    out.push({
+      text,
+      source_url: url,
+      sequence_number: seq ? Number(seq) : null,
+      chamber: ch,
+      committee_short_name: committee,
+      vote_date: dateText ? isoDate(dateText, defaultYear) : null,
+      motion
+    });
   }
+
   return out;
 }
 
 function eventFromAction(a) {
   const t = a.official_text;
+
   const c = t.match(/reported (?:favorably|with amendments)\s*\((\d+)\s*-\s*(\d+)\)/i);
-  if (c) return {chamber:a.chamber,event_type:'COMMITTEE',motion:'Committee Vote',sequence_number:null,vote_date:a.action_date,vote_time:null,yea_total:Number(c[1]),nay_total:Number(c[2]),absent_total:null,present_total:null,vote_method:'ROLL_CALL',source_url:null,committee_short_name:null};
+  if (c) {
+    return {
+      chamber: a.chamber,
+      event_type: 'COMMITTEE',
+      motion: /with amendments/i.test(t) ? 'Reported with amendments' : 'Favorably',
+      sequence_number: null,
+      vote_date: a.action_date,
+      vote_time: null,
+      yea_total: Number(c[1]),
+      nay_total: Number(c[2]),
+      absent_total: null,
+      present_total: null,
+      vote_method: 'ROLL_CALL',
+      source_url: null,
+      committee_short_name: null
+    };
+  }
+
   let f = t.match(/yeas?\s+(\d+)\s*,?\s+nays?\s+(\d+)/i);
   if (!f) f = t.match(/vote of\s+(\d+)\s+yeas?\s+and\s+(\d+)\s+nays?/i);
   if (!f) return null;
-  return {chamber:a.chamber,event_type:'FLOOR',motion:/concurred/i.test(t)?'CONCUR IN SENATE AMENDMENTS':'FINAL PASSAGE',sequence_number:null,vote_date:a.action_date,vote_time:null,yea_total:Number(f[1]),nay_total:Number(f[2]),absent_total:null,present_total:null,vote_method:'ROLL_CALL',source_url:null,committee_short_name:null};
+
+  return {
+    chamber: a.chamber,
+    event_type: 'FLOOR',
+    motion: /concurred/i.test(t) ? 'CONCUR IN SENATE AMENDMENTS' : 'FINAL PASSAGE',
+    sequence_number: null,
+    vote_date: a.action_date,
+    vote_time: null,
+    yea_total: Number(f[1]),
+    nay_total: Number(f[2]),
+    absent_total: null,
+    present_total: null,
+    vote_method: 'ROLL_CALL',
+    source_url: null,
+    committee_short_name: null
+  };
 }
 
 export function deriveVoteEvents(actions, links) {
   const events = actions.map(eventFromAction).filter(Boolean);
+
   for (const l of links) {
     let match = null;
+
     if (l.committee_short_name) {
-      match = events.find(e => e.event_type==='COMMITTEE' && e.chamber===l.chamber && (!l.vote_date || e.vote_date===l.vote_date));
+      match = events.find(e =>
+        e.event_type === 'COMMITTEE' &&
+        e.chamber === l.chamber &&
+        (!l.vote_date || e.vote_date === l.vote_date)
+      );
     } else if (l.sequence_number) {
-      match = events.find(e => e.event_type==='FLOOR' && e.chamber===l.chamber && l.motion && e.motion.toLowerCase()===l.motion.toLowerCase());
-      if (!match) match = events.find(e => e.event_type==='FLOOR' && e.chamber===l.chamber && !e.source_url && !e.sequence_number);
+      match = events.find(e =>
+        e.event_type === 'FLOOR' &&
+        e.chamber === l.chamber &&
+        l.motion &&
+        e.motion.toLowerCase() === l.motion.toLowerCase()
+      );
+
+      if (!match) {
+        match = events.find(e =>
+          e.event_type === 'FLOOR' &&
+          e.chamber === l.chamber &&
+          !e.source_url &&
+          !e.sequence_number
+        );
+      }
     }
+
     if (match) {
-      match.source_url=l.source_url; match.sequence_number=l.sequence_number??match.sequence_number; match.motion=l.motion??match.motion; match.committee_short_name=l.committee_short_name??match.committee_short_name;
+      match.source_url = l.source_url;
+      match.sequence_number = l.sequence_number ?? match.sequence_number;
+      match.motion = l.motion ?? match.motion;
+      match.committee_short_name = l.committee_short_name ?? match.committee_short_name;
+      match.vote_date = l.vote_date ?? match.vote_date;
     } else if (l.chamber && (l.sequence_number || l.committee_short_name)) {
-      events.push({chamber:l.chamber,event_type:l.committee_short_name?'COMMITTEE':'FLOOR',motion:l.motion??'Vote',sequence_number:l.sequence_number,vote_date:l.vote_date,vote_time:null,yea_total:null,nay_total:null,absent_total:null,present_total:null,vote_method:'ROLL_CALL',source_url:l.source_url,committee_short_name:l.committee_short_name});
+      events.push({
+        chamber: l.chamber,
+        event_type: l.committee_short_name ? 'COMMITTEE' : 'FLOOR',
+        motion: l.motion ?? (l.committee_short_name ? 'Committee Vote' : 'Vote'),
+        sequence_number: l.sequence_number,
+        vote_date: l.vote_date,
+        vote_time: null,
+        yea_total: null,
+        nay_total: null,
+        absent_total: null,
+        present_total: null,
+        vote_method: 'ROLL_CALL',
+        source_url: l.source_url,
+        committee_short_name: l.committee_short_name
+      });
     }
   }
+
   return events;
 }
 
-export function parseBillDetails(html, instrument) {
-  const actions = parseActionHistory(html);
-  const links = parseVoteLinks(html);
-  return { primary_author_text: parsePrimaryAuthor(html,instrument), actions, vote_events: deriveVoteEvents(actions,links) };
+export function parseBillDetails(html, instrument, defaultYear = null) {
+  const actions = parseActionHistory(html, defaultYear);
+  const links = parseVoteLinks(html, defaultYear);
+  return {
+    primary_author_text: parsePrimaryAuthor(html, instrument),
+    actions,
+    vote_events: deriveVoteEvents(actions, links)
+  };
 }

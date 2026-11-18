@@ -54,6 +54,7 @@ async function writeDetails(db, bill, details) {
 
   if (details.actions.length) {
     statements.push(db.prepare(`DELETE FROM bill_actions WHERE bill_id = ?1`).bind(bill.id));
+
     for (const action of details.actions) {
       statements.push(
         db.prepare(
@@ -145,7 +146,7 @@ async function writeDetails(db, bill, details) {
 export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = fetch) {
   const bill = await db.prepare(
     `SELECT b.id, b.instrument, b.origin_chamber, b.detail_synced_at,
-            s.id AS session_id, s.session_code, s.is_active
+            s.id AS session_id, s.session_code, s.start_date, s.is_active
        FROM bills b
        JOIN sessions s ON s.id = b.session_id
       WHERE b.instrument = ?1
@@ -166,22 +167,31 @@ export async function refreshBillDetailsForRequest(db, instrument, fetchImpl = f
 
   if (!shouldRefresh) return { found: true, refreshed: false };
 
-  const url = billInfoUrl(bill.session_code, instrument);
-  const response = await fetchImpl(url, {
+  const expandedUrl = `${billInfoUrl(bill.session_code, instrument)}&sbi=y`;
+
+  const response = await fetchImpl(expandedUrl, {
     redirect: 'follow',
     headers: {
       'user-agent': 'LeLegis/0.1 (+https://legis.le-comrade.org)',
       accept: 'text/html,application/xhtml+xml'
     }
   });
+
   if (!response.ok) return { found: true, refreshed: false };
 
   const html = await response.text();
-  const fakeFetch = async () => ({ ok: true, text: async () => html });
+
+  const fakeFetch = async () => ({
+    ok: true,
+    text: async () => html
+  });
+
   const indexRecord = await fetchBillRecord(bill.session_code, instrument, fakeFetch);
   if (indexRecord) await upsertBillRecord(db, bill.session_id, indexRecord);
 
-  const details = parseBillDetails(html, instrument);
+  const defaultYear = Number(String(bill.start_date).slice(0, 4));
+  const details = parseBillDetails(html, instrument, defaultYear);
+
   await writeDetails(db, bill, details);
 
   return {
