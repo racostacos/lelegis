@@ -75,7 +75,20 @@ button,.button{border:0;border-radius:14px;padding:13px 16px;background:var(--te
 ${body}<footer class="footer">LeLegis · Louisiana legislative data from official Louisiana Legislature sources.</footer></body></html>`;
 
 export function renderHome({recentBills=[],signedIn=false,userName=null}={}){
- const cards=recentBills.slice(0,6).map(b=>`<a class="bill-card" href="/bills/${encodeURIComponent(b.instrument)}"><div class="meta"><span class="chip ${String(b.origin_chamber).toLowerCase()}">${esc(b.instrument)}</span><span class="chip status">${esc(statusLabel(b.normalized_status))}</span></div><h3 style="margin-top:12px">${esc(b.subject||'No subject')}</h3><div class="muted small">${esc(b.official_description||'')}</div></a>`).join('');
+ const cards=recentBills.slice(0,6).map(b=>`<a class="bill-card" href="/bills/${encodeURIComponent(b.instrument)}">
+   <div class="meta">
+     <span class="chip ${String(b.origin_chamber).toLowerCase()}">${esc(b.instrument)}</span>
+     <span class="chip status">${esc(statusLabel(b.normalized_status))}</span>
+     ${!b.has_been_introduced
+       ? '<span class="chip" style="background:#fff1cc;color:#765500">No introduction recorded</span>'
+       : ''}
+     ${!b.has_any_vote
+       ? '<span class="chip" style="background:#f4e6e4;color:#8a332d">No official vote recorded</span>'
+       : ''}
+   </div>
+   <h3 style="margin-top:12px">${esc(b.subject||'No subject')}</h3>
+   <div class="muted small">${esc(b.official_description||'')}</div>
+ </a>`).join('');
  return page({title:'Louisiana Legislature, made readable',signedIn,userName,body:`<main class="wrap"><section class="hero"><div class="eyebrow">Louisiana Legislature</div><h1>Follow the bills.<br>See the votes.</h1><p class="lede">LeLegis turns Louisiana legislative records into readable bill timelines, committee motions, floor votes, and member voting records.</p><div class="search"><form action="/bills" method="get" style="display:flex;gap:10px;width:100%"><input name="q" aria-label="Search bills" placeholder="Search HB1, taxes, education, insurance..."><button>Search bills</button></form></div></section><section style="margin-top:28px"><div class="meta" style="justify-content:space-between"><h2>Recent bills</h2><a class="button secondary" href="/bills">Browse all bills</a></div><div class="stack">${cards||'<div class="empty">No bills loaded yet.</div>'}</div></section></main>`});
 }
 
