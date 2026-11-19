@@ -95,6 +95,13 @@ async function getPersonalizedBills(env,{
           WHERE ubp.bill_id=b.id
             AND ubp.user_id=?1
        ) AS user_voted,
+       (
+         SELECT ubp.position
+           FROM user_bill_positions ubp
+          WHERE ubp.bill_id=b.id
+            AND ubp.user_id=?1
+          LIMIT 1
+       ) AS user_position,
        EXISTS(
          SELECT 1
            FROM legislator_votes lv
@@ -136,6 +143,13 @@ async function getPersonalizedBills(env,{
          SELECT 1 FROM user_bill_positions ubp
           WHERE ubp.bill_id=b.id AND ubp.user_id=?1
        ) AS user_voted,
+       (
+         SELECT ubp.position
+           FROM user_bill_positions ubp
+          WHERE ubp.bill_id=b.id
+            AND ubp.user_id=?1
+          LIMIT 1
+       ) AS user_position,
        EXISTS(
          SELECT 1
            FROM legislator_votes lv
