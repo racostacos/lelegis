@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compareBillMembers} from '../src/lib/bill-member-comparison.js';
-import {renderBill} from '../src/ui.js';
+import {compareBillMembers,calculateMemberAlignment} from '../src/lib/bill-member-comparison.js';
+import {renderBill,renderLegislator} from '../src/ui.js';
 
 const house={legislator_id:1,chamber:'HOUSE',last_name:'Example',party:'Republican'};
 const senate={legislator_id:2,chamber:'SENATE',last_name:'Sample',party:'Democrat'};
@@ -80,4 +80,42 @@ test('adoption of amendments and bill procedural adoption are not resolution pas
     const [comparison]=compareBillMembers({instrument,vote_events:[event(1,'HOUSE',house,'YEA',motion)]},[house],'YES');
     assert.equal(comparison.matched,null);
   }
+});
+
+const alignmentRows=(bill,member,user_position)=>bill.vote_events.filter(v=>v.event_type==='FLOOR'&&v.chamber===member.chamber).flatMap(v=>v.member_votes.filter(m=>m.legislator_id===member.legislator_id).map(m=>({...member,bill_id:bill.instrument,instrument:bill.instrument,user_position,vote:m.vote,vote_event_id:v.id,motion:v.motion,vote_date:v.vote_date,vote_time:v.vote_time})));
+
+test('House FINAL CONSIDERATION votes count as substantive resolution votes in both views',()=>{
+  const mack={legislator_id:93,id:93,chamber:'HOUSE',district_number:95,display_name:'Shane Mack',last_name:'Mack',party:'Republican'};
+  // Verified public records: HR386 (NAY), SCR84 (YEA on final consideration).
+  const rejected={instrument:'HR386',vote_events:[event(1,'HOUSE',mack,'NAY','FINAL CONSIDERATION')]};
+  const adopted={instrument:'SCR84',vote_events:[event(2,'HOUSE',mack,'YEA','AMENDMENT # 6301 BY BAMBURG MOTION TO ADOPT'),event(3,'HOUSE',mack,'YEA','FINAL CONSIDERATION')]};
+  for(const [bill,position] of [[rejected,'YES'],[adopted,'NO']])assert.equal(compareBillMembers(bill,[mack],position)[0].matched,false);
+  const [score]=calculateMemberAlignment([...alignmentRows(rejected,mack,'YES'),...alignmentRows(adopted,mack,'NO')]);
+  assert.deepEqual([score.matches,score.disagreements,score.comparable,score.percent],[0,2,2,0]);
+  assert.match(renderLegislator(mack,{signedIn:true,alignment:score}),/0 agreements · 2 disagreements · 2 comparable bills/);
+});
+
+test('alignment and bill detail select the same latest substantive roll call and count a bill only once',()=>{
+  const member={...house,display_name:'Example'};
+  const record={instrument:'HB1',vote_events:[
+    {...event(1,'HOUSE',member,'YEA'),vote_time:'9:30:00 AM'},
+    {...event(2,'HOUSE',member,'NAY'),vote_time:'1:00:00 PM'},
+    {...event(3,'HOUSE',member,'YEA'),vote_time:null},
+    {...event(4,'HOUSE',member,'YEA','ADOPT AMENDMENT'),vote_time:'4:00:00 PM'}
+  ]};
+  for(const position of ['YES','NO']){
+    const [comparison]=compareBillMembers(record,[member],position);
+    const [score]=calculateMemberAlignment(alignmentRows(record,member,position));
+    assert.equal(comparison.representative_position,'NO');
+    assert.equal(score.comparable,1);
+    assert.equal(score.matches,Number(comparison.matched));
+    assert.equal(score.disagreements,Number(!comparison.matched));
+  }
+});
+
+test('alignment excludes noncomparable, absent and invalid saved positions',()=>{
+  const member={...house,display_name:'Example'};
+  const record={instrument:'HR1',vote_events:[event(1,'HOUSE',member,'YEA','CO-AUTHORS'),event(2,'HOUSE',member,'ABSENT','FINAL CONSIDERATION')]};
+  assert.deepEqual(calculateMemberAlignment(alignmentRows(record,member,'YES')),[]);
+  assert.deepEqual(calculateMemberAlignment(alignmentRows(bill,member,null)),[]);
 });

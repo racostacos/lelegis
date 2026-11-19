@@ -2,7 +2,7 @@ import { refreshBillDetailsForRequest } from './lib/bill-detail-sync.js';
 import { fetchSummaryDocuments as fetchOfficialSummaryDocuments } from './lib/bill-summary-docs.js';
 import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
-import { comparisonPriority, compareBillMembers } from './lib/bill-member-comparison.js';
+import { calculateMemberAlignment, compareBillMembers } from './lib/bill-member-comparison.js';
 import { isCeremonialResolution } from './lib/ceremonial-resolutions.js';
 import { filterTrackerBills, normalizeTrackerChamber } from './lib/tracker-filters.js';
 import { billBackQuery, resetSignInPath, trackerBackPath } from './lib/tracker-navigation.js';
@@ -252,22 +252,8 @@ async function getUserPositions(env,userId){
 }
 
 async function getAlignment(env,userId){
-  const rows=(await env.DB.prepare(`SELECT ubp.bill_id,ubp.position AS user_position,b.instrument,l.id AS legislator_id,l.display_name,l.party,l.chamber,l.district_number,lv.vote,ve.id AS vote_event_id,ve.motion,ve.vote_date,ve.vote_time FROM user_bill_positions ubp JOIN bills b ON b.id=ubp.bill_id JOIN vote_events ve ON ve.bill_id=b.id AND ve.event_type='FLOOR' JOIN legislator_votes lv ON lv.vote_event_id=ve.id JOIN legislators l ON l.id=lv.legislator_id WHERE ubp.user_id=?1 AND lv.vote IN ('YEA','NAY')`).bind(userId).all()).results;
-  const chosen=new Map();
-  for(const r of rows){
-    const priority=comparisonPriority(r.motion,r.instrument);if(!priority)continue;
-    const key=`${r.bill_id}:${r.legislator_id}`;
-    const rank=`${String(priority).padStart(2,'0')}:${r.vote_date??''}:${r.vote_time??''}:${String(r.vote_event_id).padStart(12,'0')}`;
-    const current=chosen.get(key);if(!current||rank>current.rank)chosen.set(key,{...r,rank});
-  }
-  const scores=new Map();
-  for(const r of chosen.values()){
-    if(!scores.has(r.legislator_id))scores.set(r.legislator_id,{legislator_id:r.legislator_id,display_name:r.display_name,party:r.party,chamber:r.chamber,district_number:r.district_number,matches:0,disagreements:0,comparable:0});
-    const s=scores.get(r.legislator_id);
-    const match=(r.user_position==='YES'&&r.vote==='YEA')||(r.user_position==='NO'&&r.vote==='NAY');
-    s.comparable+=1;if(match)s.matches+=1;else s.disagreements+=1;
-  }
-  return [...scores.values()].map(s=>({...s,percent:s.comparable?Math.round((s.matches/s.comparable)*100):0})).sort((a,b)=>b.percent-a.percent||b.comparable-a.comparable||a.display_name.localeCompare(b.display_name));
+  const rows=(await env.DB.prepare(`SELECT ubp.bill_id,ubp.position AS user_position,b.instrument,l.id AS legislator_id,l.display_name,l.party,l.chamber,l.district_number,lv.vote,ve.id AS vote_event_id,ve.motion,ve.vote_date,ve.vote_time FROM user_bill_positions ubp JOIN bills b ON b.id=ubp.bill_id JOIN vote_events ve ON ve.bill_id=b.id AND ve.event_type='FLOOR' JOIN legislator_votes lv ON lv.vote_event_id=ve.id JOIN legislators l ON l.id=lv.legislator_id AND l.chamber=ve.chamber WHERE ubp.user_id=?1 AND lv.vote IN ('YEA','NAY')`).bind(userId).all()).results;
+  return calculateMemberAlignment(rows);
 }
 
 async function getSettings(env,userId){
