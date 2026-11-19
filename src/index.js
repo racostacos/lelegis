@@ -2,6 +2,7 @@ import { refreshBillDetailsForRequest } from './lib/bill-detail-sync.js';
 import { fetchSummaryDocuments as fetchOfficialSummaryDocuments } from './lib/bill-summary-docs.js';
 import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
+import { comparisonPriority, compareBillMembers } from './lib/bill-member-comparison.js';
 import {
   renderHome, renderBills, renderBill, renderLegislators, renderLegislator,
   renderLogin, renderAccount, renderRepresentativeOnboarding, renderNotFound
@@ -252,14 +253,6 @@ async function getUserPosition(env,userId,instrument){
 
 async function getUserPositions(env,userId){
   return (await env.DB.prepare(`SELECT ubp.position,ubp.updated_at,b.instrument,b.subject,b.official_description FROM user_bill_positions ubp JOIN bills b ON b.id=ubp.bill_id JOIN sessions s ON s.id=b.session_id WHERE ubp.user_id=?1 ORDER BY ubp.updated_at DESC`).bind(userId).all()).results;
-}
-
-function comparisonPriority(motion=''){
-  const m=String(motion).toUpperCase();
-  if(m.includes('VETO')&&m.includes('OVERRIDE'))return 40;
-  if(m.includes('CONCUR')||m.includes('CONFERENCE'))return 30;
-  if(m.includes('FINAL PASSAGE'))return 20;
-  return 0;
 }
 
 async function getAlignment(env,userId){
@@ -549,72 +542,11 @@ async function getBillCommunity(env,billId,userId=null){
   };
 }
 
-async function getBillRepresentativeComparison(env,userId,billId,userPosition){
-  if(!userId) return null;
-
+async function getBillRepresentativeComparisons(env,userId,bill,userPosition){
+  if(!userId)return [];
   const settings=await getSettings(env,userId);
-  const district=Number(settings?.house_district??0);
-  if(!district) return null;
-
-  const member=await env.DB.prepare(
-    `SELECT id,display_name,last_name,district_number,party
-       FROM legislators
-      WHERE is_active=1
-        AND chamber='HOUSE'
-        AND district_number=?1
-      LIMIT 1`
-  ).bind(district).first();
-
-  if(!member) return null;
-
-  const {results}=await env.DB.prepare(
-    `SELECT
-       lv.vote,
-       ve.id AS vote_event_id,
-       ve.motion,
-       ve.vote_date,
-       ve.vote_time
-     FROM legislator_votes lv
-     JOIN vote_events ve ON ve.id=lv.vote_event_id
-     WHERE lv.legislator_id=?1
-       AND ve.bill_id=?2
-       AND ve.chamber='HOUSE'
-       AND ve.event_type='FLOOR'
-       AND lv.vote IN ('YEA','NAY')`
-  ).bind(member.id,billId).all();
-
-  if(!results.length) return null;
-
-  const comparable=results
-    .map(row=>({
-      ...row,
-      priority:comparisonPriority(row.motion),
-      dateKey:`${row.vote_date??''}T${row.vote_time??''}`
-    }))
-    .filter(row=>row.priority>0)
-    .sort((a,b)=>
-      b.priority-a.priority ||
-      String(b.dateKey).localeCompare(String(a.dateKey)) ||
-      Number(b.vote_event_id)-Number(a.vote_event_id)
-    );
-
-  const chosen=comparable[0];
-  if(!chosen) return null;
-
-  const memberPosition=chosen.vote==='YEA'?'YES':'NO';
-
-  return {
-    legislator_id:member.id,
-    display_name:member.display_name,
-    last_name:member.last_name,
-    district_number:member.district_number,
-    party:member.party,
-    user_position:userPosition??null,
-    representative_position:memberPosition,
-    matched:userPosition?userPosition===memberPosition:null,
-    motion:chosen.motion,
-    vote_date:chosen.vote_date
-  };
+  const members=await getYourMembers(env,settings,[]);
+  return compareBillMembers(bill,members,userPosition);
 }
 
 async function getBillComments(env,billId,userId=null,sort='top'){
@@ -1552,7 +1484,7 @@ export default {
 
       const community=await getBillCommunity(env,bill.id,signedIn?session.user.id:null);
 
-      const [commentData,summaryData,representativeComparison]=await Promise.all([
+      const [commentData,summaryData,representativeComparisons]=await Promise.all([
         getBillComments(env,bill.id,signedIn?session.user.id:null,'top'),
         ensureBillSummary(env,bill).catch(()=>({
           text:bill.official_description||'No summary is currently available.',
@@ -1560,13 +1492,13 @@ export default {
           generated:false
         })),
         signedIn
-          ? getBillRepresentativeComparison(
+          ? getBillRepresentativeComparisons(
               env,
               session.user.id,
-              bill.id,
+              bill,
               community.user_position
-            ).catch(()=>null)
-          : Promise.resolve(null)
+            )
+          : Promise.resolve([])
       ]);
 
       return html(renderBill(bill,{
@@ -1579,7 +1511,7 @@ export default {
         stage:billStage(bill),
         summaryText:summaryData.text,
         summarySources:summaryData.sources,
-        representativeComparison
+        representativeComparisons
       }));
     }
 

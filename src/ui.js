@@ -219,7 +219,7 @@ export function renderBills({
  });
 }
 
-export function renderBill(bill,{signedIn=false,position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0,summaryText=null,summarySources=[],representativeComparison=null}={}){
+export function renderBill(bill,{signedIn=false,position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0,summaryText=null,summarySources=[],representativeComparisons=[]}={}){
  const stages=['Introduced','In Committee','On the Floor','Passed House','Passed Senate','Signed'];
  const latest=(bill.actions??[]).at(-1);
  const introduced=(bill.actions??[])[0]?.action_date??bill.created_at?.slice?.(0,10)??'';
@@ -321,28 +321,27 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
            </span>
          </div>
          <div class="community-bar"><div class="community-yes" id="community-bar" style="width:${esc(communityYesPercent)}%"></div></div>
-         ${representativeComparison?`
+         ${representativeComparisons.map(comparison=>{
+           const isSenate=comparison.chamber==='SENATE';
+           const name=`${isSenate?'Sen.':'Rep.'} ${lawmakerName(comparison,comparison.last_name||comparison.display_name)}`;
+           return `
            <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
-             <div class="overline" style="margin-bottom:5px">Your representative</div>
-             ${representativeComparison.user_position
+             <div class="overline" style="margin-bottom:5px">Your ${isSenate?'senator':'representative'}</div>
+             ${comparison.matched!==null
                ? `
                  <div style="font-weight:800;font-size:1rem;line-height:1.35">
-                   Rep. ${lawmakerName(representativeComparison,representativeComparison.last_name||representativeComparison.display_name)}
-                   ${representativeComparison.matched?'matched':'broke from'} your position.
+                   ${name} ${comparison.matched?'backed':'broke with'} your position.
                  </div>
                  <div class="muted" style="margin-top:3px">
-                   You voted ${esc(representativeComparison.user_position)}.
-                   Rep. ${lawmakerName(representativeComparison,representativeComparison.last_name||representativeComparison.display_name)}
-                   voted ${esc(representativeComparison.representative_position)}.
+                   ${comparison.matched?`You both voted ${esc(comparison.user_position)}.`:`You voted ${esc(comparison.user_position)}. ${name} voted ${esc(comparison.representative_position)}.`}
                  </div>
                `
                : `
-                 <a href="#cast-vote" class="read-more" style="font-weight:800;font-size:1rem">
-                   See if your representative voted with you
-                 </a>
+                 <div style="font-weight:800;font-size:1rem">${name} voted ${esc(comparison.representative_position)}.</div>
+                 <div class="muted" style="margin-top:3px">${esc(comparison.motion||'Floor vote')}</div>
                `}
            </div>
-         `:''}
+         `;}).join('')}
        </div>
        ${!signedIn?`<p class="small muted" style="margin-top:14px">Sign in to save your vote and compare it with Louisiana lawmakers.</p>`:''}
      </section>
