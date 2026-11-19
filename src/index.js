@@ -3,6 +3,7 @@ import { fetchSummaryDocuments as fetchOfficialSummaryDocuments } from './lib/bi
 import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
 import { comparisonPriority, compareBillMembers } from './lib/bill-member-comparison.js';
+import { isCeremonialResolution } from './lib/ceremonial-resolutions.js';
 import {
   renderHome, renderBills, renderBill, renderLegislators, renderLegislator,
   renderLogin, renderAccount, renderRepresentativeOnboarding, renderNotFound
@@ -1460,7 +1461,7 @@ export default {
           };
 
       return html(renderBills({
-        bills:billData.bills,
+        bills:billData.bills.filter(bill=>!isCeremonialResolution(bill)),
         query,
         signedIn,
         userName,
