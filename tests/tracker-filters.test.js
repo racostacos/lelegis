@@ -32,7 +32,8 @@ test('changing either filter retains search and the other filter',()=>{
   }
   assert.match(html,/name="repVote" value="not-voted"/);
   assert.match(html,/name="myVote" value="voted"/);
-  assert.ok(html.indexOf('>Representative</span>')<html.indexOf('>Your vote</span>'));
+  assert.ok(html.includes('>Your lawmaker</span>'));
+  assert.ok(html.indexOf('>Your lawmaker</span>')<html.indexOf('>Your vote</span>'));
 });
 
 test('Voted view displays all saved positions, not just first 150 unvoted cards',()=>{
@@ -46,9 +47,9 @@ test('Voted view displays all saved positions, not just first 150 unvoted cards'
 test('user filter works without assigned lawmakers and remains absent for signed-out users',()=>{
   const memberless=renderBills({bills:[],signedIn:true,representativeAvailable:false});
   assert.match(memberless,/>Your vote<\/span>/);
-  assert.doesNotMatch(memberless,/>Representative<\/span>/);
+  assert.doesNotMatch(memberless,/>Your lawmaker<\/span>/);
   const anonymous=renderBills({bills:[],signedIn:false});
-  assert.doesNotMatch(anonymous,/>Your vote<\/span>|>Representative<\/span>/);
+  assert.doesNotMatch(anonymous,/>Your vote<\/span>|>Your lawmaker<\/span>/);
 });
 
 test('all 27 chamber and vote filter combinations produce the expected cards',()=>{
@@ -85,5 +86,5 @@ test('chamber filter uses stored chamber for all instrument types and works sign
   const html=renderBills({bills:house,signedIn:false,chamber:'house'});
   assert.match(html,/>Chamber<\/span>/);
   assert.match(html,/name="chamber" value="house"/);
-  assert.doesNotMatch(html,/>Your vote<\/span>|>Representative<\/span>|href="\/bills\/S/);
+  assert.doesNotMatch(html,/>Your vote<\/span>|>Your lawmaker<\/span>|href="\/bills\/S/);
 });

@@ -163,7 +163,7 @@ export function renderBills({
 
  const repFilter=signedIn&&representativeAvailable?`
    <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:18px 0 10px">
-     <span class="small muted" style="font-weight:800;min-width:112px">Representative</span>
+     <span class="small muted" style="font-weight:800;min-width:112px">Your lawmaker</span>
      ${filterButton('All',filterUrl('all'),repVote==='all')}
      ${filterButton('Voted',filterUrl('voted'),repVote==='voted')}
      ${filterButton('Not voted',filterUrl('not-voted'),repVote==='not-voted')}
