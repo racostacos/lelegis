@@ -250,6 +250,8 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
  </article>`;
 
  const commentsHtml=comments.map(c=>renderComment(c,false)).join('');
+ const communityYesPercent=Number(community.yes_percent??0);
+ const communityNoPercent=Number(community.total??0)>0?Math.max(0,100-communityYesPercent):0;
 
  return page({
    title:`${bill.instrument}: ${bill.subject||'Bill'}`,
@@ -303,9 +305,19 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
          </a>
        </div>
        <div class="community-box">
-         <div class="community-head"><strong>Community</strong><span class="muted"><span id="yes-percent">${esc(community.yes_percent??0)}</span>% yes · <span id="community-total">${esc(community.total??0)}</span> votes</span></div>
-         <div class="community-bar"><div class="community-yes" id="community-bar" style="width:${esc(community.yes_percent??0)}%"></div></div>
-         <div class="community-totals"><span>YES <span id="yes-count">${esc(community.yes??0)}</span></span><span>NO <span id="no-count">${esc(community.no??0)}</span></span></div>
+         <div class="community-head">
+           <strong>Community</strong>
+           <span class="muted">
+             <span id="yes-percent">${esc(communityYesPercent)}</span>% YES ·
+             <span id="no-percent">${esc(communityNoPercent)}</span>% NO ·
+             <span id="community-total">${esc(community.total??0)}</span> vote${Number(community.total??0)===1?'':'s'}
+           </span>
+         </div>
+         <div class="community-bar"><div class="community-yes" id="community-bar" style="width:${esc(communityYesPercent)}%"></div></div>
+         <div class="community-totals">
+           <span>YES <span id="yes-count">${esc(community.yes??0)}</span> <span class="muted">(${esc(communityYesPercent)}%)</span></span>
+           <span>NO <span id="no-count">${esc(community.no??0)}</span> <span class="muted">(${esc(communityNoPercent)}%)</span></span>
+         </div>
          ${representativeComparison?`
            <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
              <div class="overline" style="margin-bottom:5px">Your representative</div>
