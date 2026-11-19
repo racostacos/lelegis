@@ -259,7 +259,7 @@ async function getAlignment(env,userId){
   const rows=(await env.DB.prepare(`SELECT ubp.bill_id,ubp.position AS user_position,b.instrument,l.id AS legislator_id,l.display_name,l.party,l.chamber,l.district_number,lv.vote,ve.id AS vote_event_id,ve.motion,ve.vote_date,ve.vote_time FROM user_bill_positions ubp JOIN bills b ON b.id=ubp.bill_id JOIN vote_events ve ON ve.bill_id=b.id AND ve.event_type='FLOOR' JOIN legislator_votes lv ON lv.vote_event_id=ve.id JOIN legislators l ON l.id=lv.legislator_id WHERE ubp.user_id=?1 AND lv.vote IN ('YEA','NAY')`).bind(userId).all()).results;
   const chosen=new Map();
   for(const r of rows){
-    const priority=comparisonPriority(r.motion);if(!priority)continue;
+    const priority=comparisonPriority(r.motion,r.instrument);if(!priority)continue;
     const key=`${r.bill_id}:${r.legislator_id}`;
     const rank=`${String(priority).padStart(2,'0')}:${r.vote_date??''}:${r.vote_time??''}:${String(r.vote_event_id).padStart(12,'0')}`;
     const current=chosen.get(key);if(!current||rank>current.rank)chosen.set(key,{...r,rank});

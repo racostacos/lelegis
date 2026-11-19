@@ -1,8 +1,9 @@
-export function comparisonPriority(motion=''){
-  const m=String(motion).toUpperCase();
+export function comparisonPriority(motion='',instrument=''){
+  const m=String(motion).trim().toUpperCase();
   if(m.includes('VETO')&&m.includes('OVERRIDE'))return 40;
   if(m.includes('CONCUR')||m.includes('CONFERENCE'))return 30;
   if(m.includes('FINAL PASSAGE'))return 20;
+  if(/^(?:HR|SR|HCR|SCR)\d+$/i.test(instrument)&&m==='ADOPT')return 20;
   return 0;
 }
 
@@ -11,7 +12,7 @@ export function compareBillMembers(bill,members,userPosition){
     const results=(bill.vote_events??[]).flatMap(event=>{
       if(event.chamber!==member.chamber||event.event_type!=='FLOOR')return [];
       const vote=event.member_votes?.find(row=>row.legislator_id===member.legislator_id&&['YEA','NAY'].includes(row.vote));
-      return vote?[{...event,vote:vote.vote,priority:comparisonPriority(event.motion),dateKey:`${event.vote_date??''}T${event.vote_time??''}`}]:[];
+      return vote?[{...event,vote:vote.vote,priority:comparisonPriority(event.motion,bill.instrument),dateKey:`${event.vote_date??''}T${event.vote_time??''}`}]:[];
     });
     results.sort((a,b)=>b.priority-a.priority||b.dateKey.localeCompare(a.dateKey)||Number(b.id)-Number(a.id));
     const chosen=results[0];

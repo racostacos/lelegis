@@ -36,3 +36,21 @@ test('without a saved vote reveals official position without claiming agreement'
   assert.match(html,/Sen\. Sample \(D\) voted YES/);
   assert.doesNotMatch(html,/backed your position|broke with your position/);
 });
+
+test('resolution adoption outranks co-author votes in both chambers',()=>{
+  for(const [instrument,member] of [['SR204',senate],['HR1',house],['SCR1',senate],['HCR1',house]]){
+    const resolution={instrument,vote_events:[event(1,member.chamber,member,'YEA','ADOPT'),event(2,member.chamber,member,'NAY','CO-AUTHORS')]};
+    const [comparison]=compareBillMembers(resolution,[member],'NO');
+    assert.equal(comparison.motion,'ADOPT');
+    assert.equal(comparison.representative_position,'YES');
+    assert.equal(comparison.matched,false);
+    assert.equal(compareBillMembers(resolution,[member],'YES')[0].matched,true);
+  }
+});
+
+test('adoption of amendments and bill procedural adoption are not resolution passage',()=>{
+  for(const [instrument,motion] of [['SR204','ADOPT AMENDMENT'],['HB1','ADOPT'],['SR204','CO-AUTHORS']]){
+    const [comparison]=compareBillMembers({instrument,vote_events:[event(1,'HOUSE',house,'YEA',motion)]},[house],'YES');
+    assert.equal(comparison.matched,null);
+  }
+});
