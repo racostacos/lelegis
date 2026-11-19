@@ -252,6 +252,14 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
  const commentsHtml=comments.map(c=>renderComment(c,false)).join('');
  const communityYesPercent=Number(community.yes_percent??0);
  const communityNoPercent=Number(community.total??0)>0?Math.max(0,100-communityYesPercent):0;
+ const communityTotal=Number(community.total??0);
+ const communityLeadLabel=communityTotal===0
+   ? ''
+   : Number(community.yes??0)>Number(community.no??0)
+     ? `${communityYesPercent}% YES`
+     : Number(community.no??0)>Number(community.yes??0)
+       ? `${communityNoPercent}% NO`
+       : `${communityYesPercent}% SPLIT`;
 
  return page({
    title:`${bill.instrument}: ${bill.subject||'Bill'}`,
@@ -308,15 +316,14 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
          <div class="community-head">
            <strong>Community</strong>
            <span class="muted">
-             <span id="yes-percent">${esc(communityYesPercent)}</span>% YES ·
-             <span id="no-percent">${esc(communityNoPercent)}</span>% NO ·
-             <span id="community-total">${esc(community.total??0)}</span> vote${Number(community.total??0)===1?'':'s'}
+             ${communityTotal>0?`<span id="community-percent">${esc(communityLeadLabel)}</span> · `:''}
+             <span id="community-total">${esc(communityTotal)}</span> vote${communityTotal===1?'':'s'}
            </span>
          </div>
          <div class="community-bar"><div class="community-yes" id="community-bar" style="width:${esc(communityYesPercent)}%"></div></div>
          <div class="community-totals">
-           <span>YES <span id="yes-count">${esc(community.yes??0)}</span> <span class="muted">(${esc(communityYesPercent)}%)</span></span>
-           <span>NO <span id="no-count">${esc(community.no??0)}</span> <span class="muted">(${esc(communityNoPercent)}%)</span></span>
+           <span>YES <span id="yes-count">${esc(community.yes??0)}</span></span>
+           <span>NO <span id="no-count">${esc(community.no??0)}</span></span>
          </div>
          ${representativeComparison?`
            <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
