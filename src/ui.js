@@ -321,8 +321,13 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
            </span>
          </div>
          <div class="community-bar"><div class="community-yes" id="community-bar" style="width:${esc(communityYesPercent)}%"></div></div>
-         ${representativeComparisons.map(comparison=>{
+         ${(signedIn?representativeComparisons:[]).map(comparison=>{
            const isSenate=comparison.chamber==='SENATE';
+           if(position!=='YES'&&position!=='NO')return `
+           <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+             <div class="overline" style="margin-bottom:5px">Your ${isSenate?'senator':'representative'}</div>
+             <a href="#cast-vote" class="read-more" style="font-weight:800;font-size:1rem">Cast your vote to see how your ${isSenate?'senator':'representative'} voted.</a>
+           </div>`;
            const name=`${isSenate?'Sen.':'Rep.'} ${lawmakerName(comparison,comparison.last_name||comparison.display_name)}`;
            return `
            <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">

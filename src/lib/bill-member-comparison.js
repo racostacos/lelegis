@@ -17,6 +17,8 @@ export function compareBillMembers(bill,members,userPosition){
     results.sort((a,b)=>b.priority-a.priority||b.dateKey.localeCompare(a.dateKey)||Number(b.id)-Number(a.id));
     const chosen=results[0];
     if(!chosen)return [];
+    // Before a saved YES/NO, expose availability only, never the actual vote.
+    if(userPosition!=='YES'&&userPosition!=='NO')return [{chamber:member.chamber}];
     const memberPosition=chosen.vote==='YEA'?'YES':'NO';
     return [{
       legislator_id:member.legislator_id,

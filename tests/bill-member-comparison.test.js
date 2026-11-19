@@ -31,10 +31,37 @@ test('bill detail renders both comparison messages within a single community box
   assert.equal((html.match(/class="community-box"/g)||[]).length,1);
 });
 
-test('without a saved vote reveals official position without claiming agreement',()=>{
-  const html=renderBill(bill,{signedIn:true,representativeComparisons:compareBillMembers(bill,[senate],null)});
-  assert.match(html,/Sen\. Sample \(D\) voted YES/);
-  assert.doesNotMatch(html,/backed your position|broke with your position/);
+test('without a saved vote exposes only availability for both chambers',()=>{
+  const comparisons=compareBillMembers(bill,[house,senate],null);
+  assert.deepEqual(comparisons,[{chamber:'HOUSE'},{chamber:'SENATE'}]);
+  const html=renderBill(bill,{signedIn:true,representativeComparisons:comparisons});
+  assert.match(html,/Cast your vote to see how your representative voted/);
+  assert.match(html,/Cast your vote to see how your senator voted/);
+  assert.doesNotMatch(html,/Rep\. Example|Sen\. Sample|backed your position|broke with your position/);
+});
+
+test('renderer independently hides member votes before voting, even if supplied',()=>{
+  const comparisons=compareBillMembers(bill,[house,senate],'YES');
+  for(const position of [null,'','INVALID']){
+    const html=renderBill(bill,{signedIn:true,position,representativeComparisons:comparisons});
+    assert.doesNotMatch(html,/Rep\. Example|Sen\. Sample|backed your position|broke with your position/);
+  }
+  const html=renderBill(bill,{signedIn:false,position:'YES',representativeComparisons:comparisons});
+  assert.doesNotMatch(html,/Rep\. Example|Sen\. Sample|backed your position|broke with your position/);
+});
+
+test('saved NO reveals both actual member positions only after voting',()=>{
+  const html=renderBill(bill,{signedIn:true,position:'NO',representativeComparisons:compareBillMembers(bill,[house,senate],'NO')});
+  assert.match(html,/Rep\. Example \(R\) broke with your position/);
+  assert.match(html,/Sen\. Sample \(D\) broke with your position/);
+  assert.doesNotMatch(html,/Cast your vote to see how your/);
+});
+
+test('procedural vote is also concealed before the user votes',()=>{
+  const procedural={...bill,vote_events:[event(1,'SENATE',senate,'YEA','ADOPT AMENDMENT')]};
+  assert.deepEqual(compareBillMembers(procedural,[senate],null),[{chamber:'SENATE'}]);
+  const html=renderBill(procedural,{signedIn:true,representativeComparisons:compareBillMembers(procedural,[senate],null)});
+  assert.doesNotMatch(html,/Sen\. Sample|voted YES/);
 });
 
 test('resolution adoption outranks co-author votes in both chambers',()=>{
