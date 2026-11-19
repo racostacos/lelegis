@@ -321,10 +321,6 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
            </span>
          </div>
          <div class="community-bar"><div class="community-yes" id="community-bar" style="width:${esc(communityYesPercent)}%"></div></div>
-         <div class="community-totals">
-           <span>YES <span id="yes-count">${esc(community.yes??0)}</span></span>
-           <span>NO <span id="no-count">${esc(community.no??0)}</span></span>
-         </div>
          ${representativeComparison?`
            <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
              <div class="overline" style="margin-bottom:5px">Your representative</div>
