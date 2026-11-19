@@ -141,8 +141,11 @@ export function renderBills({
          : '<span style="color:var(--teal-dark);font-weight:800"> Official vote recorded</span>'}
    </div>
 
-   ${signedIn&&b.representative_voted
-     ? `<div style="margin-top:10px;font-size:.82rem;font-weight:800;color:var(--teal)">See how your representative voted</div>`
+   ${signedIn&&b.house_representative_voted
+     ? '<div style="margin-top:10px;font-size:.82rem;font-weight:800;color:var(--teal)">See how your representative voted</div>'
+     : ''}
+   ${signedIn&&b.senate_representative_voted
+     ? '<div style="margin-top:6px;font-size:.82rem;font-weight:800;color:var(--teal)">See how your senator voted</div>'
      : ''}
    <div class="small muted" style="margin-top:12px">${esc(b.official_status||'')}</div>
  </a>`;

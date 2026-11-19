@@ -65,13 +65,15 @@ async function getPersonalizedBills(env,{
   const repFilter=validRepVote.has(repVote)?repVote:'all';
   const q=String(query??'').trim();
 
-  let representativeId=null;
+  let houseRepresentativeId=null;
+  let senateRepresentativeId=null;
 
   if(userId){
     const settings=await getSettings(env,userId);
-    const district=Number(settings?.house_district??0);
+    const houseDistrict=Number(settings?.house_district??0);
+    const senateDistrict=Number(settings?.senate_district??0);
 
-    if(district){
+    if(houseDistrict){
       const rep=await env.DB.prepare(
         `SELECT id
            FROM legislators
@@ -79,22 +81,33 @@ async function getPersonalizedBills(env,{
             AND chamber='HOUSE'
             AND district_number=?1
           LIMIT 1`
-      ).bind(district).first();
+      ).bind(houseDistrict).first();
+      houseRepresentativeId=rep?.id??null;
+    }
 
-      representativeId=rep?.id??null;
+    if(senateDistrict){
+      const senator=await env.DB.prepare(
+        `SELECT id
+           FROM legislators
+          WHERE is_active=1
+            AND chamber='SENATE'
+            AND district_number=?1
+          LIMIT 1`
+      ).bind(senateDistrict).first();
+      senateRepresentativeId=senator?.id??null;
     }
   }
 
   const where=q
     ? `WHERE (
-         b.instrument LIKE ?3 OR
-         b.subject LIKE ?3 OR
-         b.official_description LIKE ?3 OR
-         b.official_status LIKE ?3
+         b.instrument LIKE ?4 OR
+         b.subject LIKE ?4 OR
+         b.official_description LIKE ?4 OR
+         b.official_status LIKE ?4
        )`
     : '';
 
-  const sql=`SELECT
+  const selectSql=`SELECT
        b.id,
        b.instrument,
        b.origin_chamber,
@@ -105,8 +118,7 @@ async function getPersonalizedBills(env,{
        b.act_number,
        b.effective_date,
        EXISTS(
-         SELECT 1
-           FROM vote_events ve_any
+         SELECT 1 FROM vote_events ve_any
           WHERE ve_any.bill_id=b.id
        ) AS has_any_vote,
        EXISTS(
@@ -131,6 +143,7 @@ async function getPersonalizedBills(env,{
             AND ubp.user_id=?1
           LIMIT 1
        ) AS user_position,
+
        EXISTS(
          SELECT 1
            FROM legislator_votes lv
@@ -140,82 +153,64 @@ async function getPersonalizedBills(env,{
             AND ve.chamber='HOUSE'
             AND ve.event_type='FLOOR'
             AND lv.vote IN ('YEA','NAY')
-       ) AS representative_voted
+       ) AS house_representative_voted,
+
+       EXISTS(
+         SELECT 1
+           FROM legislator_votes lv
+           JOIN vote_events ve ON ve.id=lv.vote_event_id
+          WHERE lv.legislator_id=?3
+            AND ve.bill_id=b.id
+            AND ve.chamber='SENATE'
+            AND ve.event_type='FLOOR'
+            AND lv.vote IN ('YEA','NAY')
+       ) AS senate_representative_voted
+
      FROM bills b
      JOIN sessions s ON s.id=b.session_id
      ${where}
      ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC
-     LIMIT ?4`;
+     LIMIT ?5`;
 
-  const stmt=env.DB.prepare(sql);
+  let rows=[];
 
-  const result=q
-    ? await stmt.bind(userId??'',representativeId??-1,`%${q}%`,Math.max(limit,5000)).all()
-    : await stmt.bind(userId??'',representativeId??-1,Math.max(limit,5000),Math.max(limit,5000)).all();
-
-  // The no-query SQL uses ?4, so bind positions must still exist. Re-run with a
-  // query-neutral placeholder when q is empty.
-  let rows=result.results??[];
-
-  if(!q){
-    const noQuerySql=`SELECT
-       b.id,
-       b.instrument,
-       b.origin_chamber,
-       b.subject,
-       b.official_description,
-       b.official_status,
-       b.normalized_status,
-       b.act_number,
-       b.effective_date,
-       EXISTS(
-         SELECT 1
-           FROM vote_events ve_any
-          WHERE ve_any.bill_id=b.id
-       ) AS has_any_vote,
-       EXISTS(
-         SELECT 1
-           FROM bill_actions ba_intro
-          WHERE ba_intro.bill_id=b.id
-            AND (
-              UPPER(COALESCE(ba_intro.normalized_action,'')) LIKE '%INTRODUC%'
-              OR UPPER(COALESCE(ba_intro.official_text,'')) LIKE '%INTRODUC%'
-            )
-       ) AS has_been_introduced,
-       EXISTS(
-         SELECT 1 FROM user_bill_positions ubp
-          WHERE ubp.bill_id=b.id AND ubp.user_id=?1
-       ) AS user_voted,
-       (
-         SELECT ubp.position
-           FROM user_bill_positions ubp
-          WHERE ubp.bill_id=b.id
-            AND ubp.user_id=?1
-          LIMIT 1
-       ) AS user_position,
-       EXISTS(
-         SELECT 1
-           FROM legislator_votes lv
-           JOIN vote_events ve ON ve.id=lv.vote_event_id
-          WHERE lv.legislator_id=?2
-            AND ve.bill_id=b.id
-            AND ve.chamber='HOUSE'
-            AND ve.event_type='FLOOR'
-            AND lv.vote IN ('YEA','NAY')
-       ) AS representative_voted
-     FROM bills b
-     JOIN sessions s ON s.id=b.session_id
-     ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC
-     LIMIT ?3`;
-
+  if(q){
+    rows=(await env.DB.prepare(selectSql)
+      .bind(
+        userId??'',
+        houseRepresentativeId??-1,
+        senateRepresentativeId??-1,
+        `%${q}%`,
+        Math.max(limit,5000)
+      )
+      .all()).results??[];
+  }else{
+    const noQuerySql=selectSql.replace(where,'').replace('LIMIT ?5','LIMIT ?4');
     rows=(await env.DB.prepare(noQuerySql)
-      .bind(userId??'',representativeId??-1,Math.max(limit,5000))
+      .bind(
+        userId??'',
+        houseRepresentativeId??-1,
+        senateRepresentativeId??-1,
+        Math.max(limit,5000)
+      )
       .all()).results??[];
   }
 
-  const filtered=rows.filter(row=>{
-    const userVoted=Boolean(row.user_voted);
-    const representativeVoted=Boolean(row.representative_voted);
+  const normalized=rows.map(row=>({
+    ...row,
+    user_voted:Boolean(row.user_voted),
+    has_any_vote:Boolean(row.has_any_vote),
+    has_been_introduced:Boolean(row.has_been_introduced),
+    house_representative_voted:Boolean(row.house_representative_voted),
+    senate_representative_voted:Boolean(row.senate_representative_voted),
+    representative_voted:Boolean(
+      row.house_representative_voted || row.senate_representative_voted
+    )
+  }));
+
+  const filtered=normalized.filter(row=>{
+    const userVoted=row.user_voted;
+    const representativeVoted=row.representative_voted;
 
     if(userFilter==='voted'&&!userVoted) return false;
     if(userFilter==='not-voted'&&userVoted) return false;
@@ -225,16 +220,10 @@ async function getPersonalizedBills(env,{
   });
 
   return {
-    bills:filtered.slice(0,limit).map(row=>({
-      ...row,
-      user_voted:Boolean(row.user_voted),
-      representative_voted:Boolean(row.representative_voted),
-      has_any_vote:Boolean(row.has_any_vote),
-      has_been_introduced:Boolean(row.has_been_introduced)
-    })),
+    bills:filtered.slice(0,limit),
     myVote:userFilter,
     repVote:repFilter,
-    representativeAvailable:Boolean(representativeId)
+    representativeAvailable:Boolean(houseRepresentativeId||senateRepresentativeId)
   };
 }
 
