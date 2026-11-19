@@ -131,6 +131,16 @@ export function renderBills({
    </div>
    <h3 style="margin-top:12px">${esc(b.subject||'No subject')}</h3>
    <div class="muted">${esc(b.official_description||'')}</div>
+
+   <div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#eef3f1;font-size:.84rem;line-height:1.35">
+     <strong>Legislative activity:</strong>
+     ${!b.has_been_introduced
+       ? '<span style="color:#765500;font-weight:800"> Not introduced yet</span>'
+       : !b.has_any_vote
+         ? '<span style="color:#8a332d;font-weight:800"> Introduced, no official vote yet</span>'
+         : '<span style="color:var(--teal-dark);font-weight:800"> Official vote recorded</span>'}
+   </div>
+
    ${signedIn&&b.representative_voted
      ? `<div style="margin-top:10px;font-size:.82rem;font-weight:800;color:var(--teal)">See how your representative voted</div>`
      : ''}
