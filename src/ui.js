@@ -97,13 +97,15 @@ export function renderBills({
  query='',
  signedIn=false,
  userName=null,
+ myVote='all',
  repVote='all',
  representativeAvailable=false
 }={}){
- const filterUrl=(nextRepVote=repVote)=>{
+ const filterUrl=(nextRepVote=repVote,nextMyVote=myVote)=>{
    const params=new URLSearchParams();
    if(query)params.set('q',query);
    if(nextRepVote!=='all')params.set('repVote',nextRepVote);
+   if(nextMyVote!=='all')params.set('myVote',nextMyVote);
    const qs=params.toString();
    return qs?`/?${qs}`:'/';
  };
@@ -155,13 +157,22 @@ export function renderBills({
  const voted=signedIn?bills.filter(b=>b.user_voted):[];
 
  const repFilter=signedIn&&representativeAvailable?`
-   <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:18px 0 22px">
+   <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:18px 0 10px">
      <span class="small muted" style="font-weight:800;min-width:112px">Representative</span>
      ${filterButton('All',filterUrl('all'),repVote==='all')}
      ${filterButton('Voted',filterUrl('voted'),repVote==='voted')}
      ${filterButton('Not voted',filterUrl('not-voted'),repVote==='not-voted')}
    </div>
  `: '';
+
+ const myFilter=signedIn?`
+   <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:10px 0 22px">
+     <span class="small muted" style="font-weight:800;min-width:112px">Your vote</span>
+     ${filterButton('All',filterUrl(repVote,'all'),myVote==='all')}
+     ${filterButton('Voted',filterUrl(repVote,'voted'),myVote==='voted')}
+     ${filterButton('Not voted',filterUrl(repVote,'not-voted'),myVote==='not-voted')}
+   </div>
+ `:'';
 
  const needsVoteHtml=needsVote.map(card).join('');
  const votedHtml=voted.map(card).join('');
@@ -178,13 +189,16 @@ export function renderBills({
        <form class="search" action="/" method="get">
          <input name="q" value="${esc(query)}" placeholder="Search bill number, subject, description or status">
          ${signedIn&&repVote!=='all'?`<input type="hidden" name="repVote" value="${esc(repVote)}">`:''}
+         ${signedIn&&myVote!=='all'?`<input type="hidden" name="myVote" value="${esc(myVote)}">`:''}
          <button>Search</button>
        </form>
      </section>
 
      ${repFilter}
+     ${myFilter}
 
      ${signedIn?`
+       ${myVote!=='voted'?`
        <section style="margin-top:26px">
          <div class="meta" style="justify-content:space-between;margin-bottom:14px">
            <div>
@@ -197,7 +211,9 @@ export function renderBills({
            ${needsVoteHtml||'<div class="empty">No bills in this view need your vote.</div>'}
          </div>
        </section>
+       `:''}
 
+       ${myVote!=='not-voted'?`
        <section style="margin-top:36px;padding-top:28px;border-top:1px solid var(--line)">
          <div class="meta" style="justify-content:space-between;margin-bottom:14px">
            <div>
@@ -210,6 +226,7 @@ export function renderBills({
            ${votedHtml||'<div class="empty">You have not voted on any bills in this view yet.</div>'}
          </div>
        </section>
+       `:''}
      `:`
        <section class="stack" style="margin-top:22px">
          ${needsVoteHtml||'<div class="empty">No bills match those filters.</div>'}

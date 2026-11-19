@@ -4,6 +4,7 @@ import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
 import { comparisonPriority, compareBillMembers } from './lib/bill-member-comparison.js';
 import { isCeremonialResolution } from './lib/ceremonial-resolutions.js';
+import { filterTrackerBills } from './lib/tracker-filters.js';
 import {
   renderHome, renderBills, renderBill, renderLegislators, renderLegislator,
   renderLogin, renderAccount, renderRepresentativeOnboarding, renderNotFound
@@ -64,7 +65,7 @@ async function getPersonalizedBills(env,{
   const validMyVote=new Set(['all','voted','not-voted']);
   const validRepVote=new Set(['all','voted','not-voted']);
   const userFilter=validMyVote.has(myVote)?myVote:'all';
-  const repFilter=validRepVote.has(repVote)?repVote:'all';
+  let repFilter=validRepVote.has(repVote)?repVote:'all';
   const q=String(query??'').trim();
 
   let houseRepresentativeId=null;
@@ -99,6 +100,8 @@ async function getPersonalizedBills(env,{
       senateRepresentativeId=senator?.id??null;
     }
   }
+
+  if(!houseRepresentativeId&&!senateRepresentativeId)repFilter='all';
 
   const where=q
     ? `WHERE (
@@ -210,16 +213,7 @@ async function getPersonalizedBills(env,{
     )
   }));
 
-  const filtered=normalized.filter(row=>{
-    const userVoted=row.user_voted;
-    const representativeVoted=row.representative_voted;
-
-    if(userFilter==='voted'&&!userVoted) return false;
-    if(userFilter==='not-voted'&&userVoted) return false;
-    if(repFilter==='voted'&&!representativeVoted) return false;
-    if(repFilter==='not-voted'&&representativeVoted) return false;
-    return true;
-  });
+  const filtered=filterTrackerBills(normalized,userFilter,repFilter);
 
   return {
     bills:filtered.slice(0,limit),
@@ -1444,12 +1438,13 @@ export default {
     if(url.pathname==='/'||url.pathname===''){
       const query=url.searchParams.get('q')??'';
       const repVote=url.searchParams.get('repVote')??'all';
+      const myVote=url.searchParams.get('myVote')??'all';
 
       const billData=signedIn
         ? await getPersonalizedBills(env,{
             query,
             userId:session.user.id,
-            myVote:'all',
+            myVote,
             repVote,
             limit:5000
           })
@@ -1465,6 +1460,7 @@ export default {
         query,
         signedIn,
         userName,
+        myVote:billData.myVote,
         repVote:billData.repVote,
         representativeAvailable:billData.representativeAvailable
       }));
