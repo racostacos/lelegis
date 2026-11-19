@@ -99,13 +99,15 @@ export function renderBills({
  userName=null,
  myVote='all',
  repVote='all',
+ chamber='all',
  representativeAvailable=false
 }={}){
- const filterUrl=(nextRepVote=repVote,nextMyVote=myVote)=>{
+ const filterUrl=(nextRepVote=repVote,nextMyVote=myVote,nextChamber=chamber)=>{
    const params=new URLSearchParams();
    if(query)params.set('q',query);
    if(nextRepVote!=='all')params.set('repVote',nextRepVote);
    if(nextMyVote!=='all')params.set('myVote',nextMyVote);
+   if(nextChamber!=='all')params.set('chamber',nextChamber);
    const qs=params.toString();
    return qs?`/?${qs}`:'/';
  };
@@ -166,13 +168,21 @@ export function renderBills({
  `: '';
 
  const myFilter=signedIn?`
-   <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:10px 0 22px">
+   <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:10px 0 10px">
      <span class="small muted" style="font-weight:800;min-width:112px">Your vote</span>
      ${filterButton('All',filterUrl(repVote,'all'),myVote==='all')}
      ${filterButton('Voted',filterUrl(repVote,'voted'),myVote==='voted')}
      ${filterButton('Not voted',filterUrl(repVote,'not-voted'),myVote==='not-voted')}
    </div>
  `:'';
+
+ const chamberFilter=`
+   <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:${signedIn?'10px':'18px'} 0 22px">
+     <span class="small muted" style="font-weight:800;min-width:112px">Chamber</span>
+     ${filterButton('All',filterUrl(repVote,myVote,'all'),chamber==='all')}
+     ${filterButton('House',filterUrl(repVote,myVote,'house'),chamber==='house')}
+     ${filterButton('Senate',filterUrl(repVote,myVote,'senate'),chamber==='senate')}
+   </div>`;
 
  const needsVoteHtml=needsVote.map(card).join('');
  const votedHtml=voted.map(card).join('');
@@ -190,12 +200,14 @@ export function renderBills({
          <input name="q" value="${esc(query)}" placeholder="Search bill number, subject, description or status">
          ${signedIn&&repVote!=='all'?`<input type="hidden" name="repVote" value="${esc(repVote)}">`:''}
          ${signedIn&&myVote!=='all'?`<input type="hidden" name="myVote" value="${esc(myVote)}">`:''}
+         ${chamber!=='all'?`<input type="hidden" name="chamber" value="${esc(chamber)}">`:''}
          <button>Search</button>
        </form>
      </section>
 
      ${repFilter}
      ${myFilter}
+     ${chamberFilter}
 
      ${signedIn?`
        ${myVote!=='voted'?`

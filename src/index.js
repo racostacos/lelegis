@@ -4,7 +4,7 @@ import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
 import { comparisonPriority, compareBillMembers } from './lib/bill-member-comparison.js';
 import { isCeremonialResolution } from './lib/ceremonial-resolutions.js';
-import { filterTrackerBills } from './lib/tracker-filters.js';
+import { filterTrackerBills, normalizeTrackerChamber } from './lib/tracker-filters.js';
 import {
   renderHome, renderBills, renderBill, renderLegislators, renderLegislator,
   renderLogin, renderAccount, renderRepresentativeOnboarding, renderNotFound
@@ -1439,6 +1439,7 @@ export default {
       const query=url.searchParams.get('q')??'';
       const repVote=url.searchParams.get('repVote')??'all';
       const myVote=url.searchParams.get('myVote')??'all';
+      const chamber=normalizeTrackerChamber(url.searchParams.get('chamber'));
 
       const billData=signedIn
         ? await getPersonalizedBills(env,{
@@ -1456,12 +1457,13 @@ export default {
           };
 
       return html(renderBills({
-        bills:billData.bills.filter(bill=>!isCeremonialResolution(bill)),
+        bills:filterTrackerBills(billData.bills,'all','all',chamber).filter(bill=>!isCeremonialResolution(bill)),
         query,
         signedIn,
         userName,
         myVote:billData.myVote,
         repVote:billData.repVote,
+        chamber,
         representativeAvailable:billData.representativeAvailable
       }));
     }

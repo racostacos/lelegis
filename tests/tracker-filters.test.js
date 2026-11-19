@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {filterTrackerBills} from '../src/lib/tracker-filters.js';
+import {filterTrackerBills,normalizeTrackerChamber} from '../src/lib/tracker-filters.js';
 import {renderBills} from '../src/ui.js';
 
 const bill=(instrument,user_voted,representative_voted)=>({instrument,user_voted,representative_voted,user_position:user_voted?'YES':null,origin_chamber:'HOUSE',subject:'Education'});
@@ -48,4 +48,41 @@ test('user filter works without assigned lawmakers and remains absent for signed
   assert.doesNotMatch(memberless,/>Representative<\/span>/);
   const anonymous=renderBills({bills:[],signedIn:false});
   assert.doesNotMatch(anonymous,/>Your vote<\/span>|>Representative<\/span>/);
+});
+
+test('all 27 chamber and vote filter combinations produce the expected cards',()=>{
+  const records=[...bills,...bills.map((b,i)=>({...b,instrument:['SB1','SR2','SCR3','SB4'][i],origin_chamber:'SENATE'}))];
+  for(const [i,myVote] of states.entries())for(const [j,repVote] of states.entries())for(const chamber of ['all','house','senate']){
+    const expectedHouse=expected[i][j];
+    const expectedSenate=expectedHouse.map(instrument=>['SB1','SR2','SCR3','SB4'][Number(instrument.slice(2))-1]);
+    const wanted=chamber==='house'?expectedHouse:chamber==='senate'?expectedSenate:[...expectedHouse,...expectedSenate];
+    // This is the same two-step filtering sequence used by the homepage route.
+    const filtered=filterTrackerBills(filterTrackerBills(records,myVote,repVote),'all','all',chamber);
+    assert.deepEqual(filtered.map(b=>b.instrument),wanted);
+    const html=renderBills({bills:filtered,signedIn:true,representativeAvailable:true,myVote,repVote,chamber});
+    for(const b of records)assert.equal(html.includes(`href="/bills/${b.instrument}"`),wanted.includes(b.instrument));
+  }
+});
+
+test('chamber filter preserves both vote selections and search in all directions',()=>{
+  const html=renderBills({signedIn:true,representativeAvailable:true,query:'school funding',myVote:'voted',repVote:'not-voted',chamber:'senate'});
+  const links=[...html.matchAll(/href="(\/\?[^\"]+)"/g)].map(m=>new URL(m[1].replaceAll('&amp;','&'),'https://example.test').searchParams);
+  for(const [rep,my,ch] of [['all','voted','senate'],['voted','voted','senate'],['not-voted','all','senate'],['not-voted','not-voted','senate'],['not-voted','voted','all'],['not-voted','voted','house'],['not-voted','voted','senate']]){
+    assert.ok(links.some(p=>p.get('q')==='school funding'&&(p.get('repVote')??'all')===rep&&(p.get('myVote')??'all')===my&&(p.get('chamber')??'all')===ch),`${rep}/${my}/${ch}`);
+  }
+  for(const [name,value] of [['repVote','not-voted'],['myVote','voted'],['chamber','senate']])assert.ok(html.includes(`name="${name}" value="${value}"`));
+  assert.ok(html.indexOf('>Your vote</span>')<html.indexOf('>Chamber</span>'));
+});
+
+test('chamber filter uses stored chamber for all instrument types and works signed out',()=>{
+  const records=['HB','HR','HCR','SB','SR','SCR'].map(prefix=>({...bill(`${prefix}1`,false,false),origin_chamber:prefix.startsWith('H')?'HOUSE':'SENATE'}));
+  const house=filterTrackerBills(records,'all','all','house');
+  assert.deepEqual(house.map(b=>b.instrument),['HB1','HR1','HCR1']);
+  assert.deepEqual(filterTrackerBills(records,'all','all','senate').map(b=>b.instrument),['SB1','SR1','SCR1']);
+  assert.equal(normalizeTrackerChamber('INVALID'),'all');
+  assert.equal(filterTrackerBills(records,'all','all','INVALID').length,6);
+  const html=renderBills({bills:house,signedIn:false,chamber:'house'});
+  assert.match(html,/>Chamber<\/span>/);
+  assert.match(html,/name="chamber" value="house"/);
+  assert.doesNotMatch(html,/>Your vote<\/span>|>Representative<\/span>|href="\/bills\/S/);
 });
