@@ -1483,14 +1483,13 @@ export default {
     }
     if(url.pathname==='/bills'||url.pathname==='/bills/'){
       const query=url.searchParams.get('q')??'';
-      const myVote=url.searchParams.get('myVote')??'all';
       const repVote=url.searchParams.get('repVote')??'all';
 
       const billData=signedIn
         ? await getPersonalizedBills(env,{
             query,
             userId:session.user.id,
-            myVote,
+            myVote:'all',
             repVote,
             limit:150
           })
@@ -1506,7 +1505,6 @@ export default {
         query,
         signedIn,
         userName,
-        myVote:billData.myVote,
         repVote:billData.repVote,
         representativeAvailable:billData.representativeAvailable
       }));
