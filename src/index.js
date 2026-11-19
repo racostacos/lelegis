@@ -1520,13 +1520,6 @@ export default {
     }
 
     if(url.pathname==='/'||url.pathname===''){
-      return html(renderHome({
-        recentBills:await getBills(env,'',6),
-        signedIn,
-        userName
-      }));
-    }
-    if(url.pathname==='/bills'||url.pathname==='/bills/'){
       const query=url.searchParams.get('q')??'';
       const repVote=url.searchParams.get('repVote')??'all';
 
@@ -1553,6 +1546,12 @@ export default {
         repVote:billData.repVote,
         representativeAvailable:billData.representativeAvailable
       }));
+    }
+
+    if(url.pathname==='/bills'||url.pathname==='/bills/'){
+      const target=new URL('/',url.origin);
+      for(const [key,value] of url.searchParams) target.searchParams.append(key,value);
+      return Response.redirect(target.toString(),302);
     }
 
     const billPageMatch=url.pathname.match(/^\/bills\/([^/]+)\/?$/);

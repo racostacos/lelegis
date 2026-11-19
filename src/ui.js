@@ -71,7 +71,7 @@ button,.button{border:0;border-radius:14px;padding:13px 16px;background:var(--te
 @media(max-width:520px){.vote-choice-grid{grid-template-columns:1fr 1fr}.bill-title{font-size:42px}.comment{grid-template-columns:44px 1fr}.bill-section-title{font-size:30px}}
 
 </style></head><body>
-<header class="sitebar"><nav class="nav"><a class="brand" href="/">LeLegis</a><div class="navlinks"><a class="${active==='bills'?'active':''}" href="/bills">Bills</a><a class="${active==='legislators'?'active':''}" href="/legislators">Legislators</a><a class="${active==='account'?'active':''}" href="${signedIn?'/account':'/login'}">${signedIn?esc(firstName(userName)):'Sign in'}</a></div></nav></header>
+<header class="sitebar"><nav class="nav"><a class="brand" href="/">LeLegis</a><div class="navlinks"><a class="${active==='bills'?'active':''}" href="/">Bills</a><a class="${active==='legislators'?'active':''}" href="/legislators">Legislators</a><a class="${active==='account'?'active':''}" href="${signedIn?'/account':'/login'}">${signedIn?esc(firstName(userName)):'Sign in'}</a></div></nav></header>
 ${body}<footer class="footer">LeLegis · Louisiana legislative data from official Louisiana Legislature sources.</footer></body></html>`;
 
 export function renderHome({recentBills=[],signedIn=false,userName=null}={}){
@@ -105,7 +105,7 @@ export function renderBills({
    if(query)params.set('q',query);
    if(nextRepVote!=='all')params.set('repVote',nextRepVote);
    const qs=params.toString();
-   return qs?`/bills?${qs}`:'/bills';
+   return qs?`/?${qs}`:'/';
  };
 
  const filterButton=(label,href,active)=>`<a
@@ -162,7 +162,7 @@ export function renderBills({
      <section class="hero">
        <div class="eyebrow">Bill tracker</div>
        <h1>Bills</h1>
-       <form class="search" action="/bills" method="get">
+       <form class="search" action="/" method="get">
          <input name="q" value="${esc(query)}" placeholder="Search bill number, subject, description or status">
          ${signedIn&&repVote!=='all'?`<input type="hidden" name="repVote" value="${esc(repVote)}">`:''}
          <button>Search</button>
@@ -244,7 +244,7 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
    signedIn,
    userName,
    body:`<main class="bill-detail-wrap">
-     <div class="bill-topline"><a class="bill-back" href="/bills">← Bills</a><button class="bill-share" id="share-bill">Share</button></div>
+     <div class="bill-topline"><a class="bill-back" href="/">← Bills</a><button class="bill-share" id="share-bill">Share</button></div>
      <div class="bill-kicker">${esc(bill.instrument)}</div>
      <h1 class="bill-title">${esc(bill.subject||bill.instrument)}</h1>
 
