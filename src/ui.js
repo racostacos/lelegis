@@ -56,7 +56,7 @@ button,.button{border:0;border-radius:14px;padding:13px 16px;background:var(--te
 .road-name{font-size:13px;font-weight:850;margin-top:9px;line-height:1.2}.latest-action{background:#edf3f1;border-radius:16px;padding:18px;line-height:1.55}
 .bill-facts{display:grid;gap:0}.bill-fact{display:grid;grid-template-columns:140px 1fr;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}.bill-fact:last-child{border-bottom:0}.bill-fact-label{color:var(--muted);font-size:13px;font-weight:900;text-transform:uppercase}.bill-fact-value{font-weight:800;text-align:right}
 .summary-text{font-size:18px;line-height:1.6;color:#445267}.read-more{display:inline-block;margin-top:12px;font-weight:850;color:var(--teal-dark);text-decoration:none}
-.vote-choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.vote-choice{background:#edf3f1;border:1px solid var(--line);border-radius:18px;padding:22px;text-align:left;color:var(--ink)}.vote-choice .overline{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:900}.vote-choice strong{display:block;font:700 31px Georgia,serif;margin:7px 0}.vote-choice.selected{outline:3px solid rgba(8,127,119,.2);border-color:#7faea6}.vote-choice.no.selected{outline-color:rgba(166,59,50,.17);border-color:#c48b86}
+.vote-choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.vote-choice{background:#edf3f1;border:1px solid var(--line);border-radius:18px;padding:22px;text-align:left;color:var(--ink);transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}.vote-choice .overline{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:900}.vote-choice strong{display:block;font:700 31px Georgia,serif;margin:7px 0}.vote-choice.selected{background:#dff3e7;border-color:#78b592;box-shadow:0 0 0 3px rgba(35,198,107,.16)}.vote-choice.no.selected{background:#f7dedd;border-color:#c97972;box-shadow:0 0 0 3px rgba(166,59,50,.16)}.vote-choice.selected .overline,.vote-choice.no.selected .overline{color:inherit}.vote-percentage{display:block;margin-top:14px;font-size:14px;font-weight:900}.vote-choice.selected .vote-percentage{color:#0a6a49}.vote-choice.no.selected .vote-percentage{color:#9c2f2a}
 .community-box{margin-top:16px;background:#edf3f1;border-radius:16px;padding:18px}.community-head{display:flex;justify-content:space-between;gap:10px}.community-bar{height:14px;background:#f8e7e8;border-radius:999px;overflow:hidden;margin:16px 0}.community-yes{height:100%;background:#23c66b}.community-totals{display:flex;justify-content:space-between;font-weight:900}
 .debate-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.debate-tabs{display:flex;gap:8px;margin:16px 0 20px}.debate-tab{background:transparent;color:var(--muted);padding:10px 16px}.debate-tab.active{background:#edf3f1;color:var(--ink)}.comment-form{display:grid;gap:10px;margin-bottom:18px}.comment-form textarea{min-height:100px;resize:vertical}
 .comment{display:grid;grid-template-columns:58px 1fr;gap:12px;padding:18px 0;border-top:1px solid var(--line)}.comment:first-of-type{border-top:0}.sway-box{display:grid;justify-items:center;align-content:start;gap:4px;padding-top:3px}.sway-button{background:none;color:var(--muted);font-size:20px;padding:0;border:0}.sway-button.liked{color:var(--teal)}.sway-count{font-weight:900;color:var(--teal)}.comment-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.comment-name{font-weight:900}.comment-age,.comment-position{color:var(--muted);font-size:13px}.comment-body{font-size:16px;line-height:1.55;margin-top:8px;white-space:pre-wrap}.comment-actions{display:flex;gap:14px;margin-top:10px}.comment-actions button{background:none;color:var(--muted);padding:0;font-size:13px}.reply{margin-left:18px;padding-left:18px;border-left:2px solid var(--line)}
@@ -250,6 +250,8 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
  </article>`;
 
  const commentsHtml=comments.map(c=>renderComment(c,false)).join('');
+ const yesPercent=Number(community.yes_percent??0);
+ const noPercent=Number(community.total??0)>0?Math.max(0,100-yesPercent):0;
 
  return page({
    title:`${bill.instrument}: ${bill.subject||'Bill'}`,
@@ -292,10 +294,16 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
        <h2 class="bill-section-title">Cast your vote</h2>
        <div class="vote-choice-grid">
          <a class="vote-choice ${position==='YES'?'selected':''}" href="/vote/${encodeURIComponent(bill.instrument)}/YES" style="text-decoration:none">
-           <span class="overline">Your read</span><strong>Vote Yes</strong><span>Back the bill</span>
+           <span class="overline">${position==='YES'?'Your vote':'Your read'}</span>
+           <strong>Vote Yes</strong>
+           <span>Back the bill</span>
+           ${position?`<span class="vote-percentage">Community: ${esc(yesPercent)}% YES</span>`:''}
          </a>
          <a class="vote-choice no ${position==='NO'?'selected':''}" href="/vote/${encodeURIComponent(bill.instrument)}/NO" style="text-decoration:none">
-           <span class="overline">Your read</span><strong>Vote No</strong><span>Block the bill</span>
+           <span class="overline">${position==='NO'?'Your vote':'Your read'}</span>
+           <strong>Vote No</strong>
+           <span>Block the bill</span>
+           ${position?`<span class="vote-percentage">Community: ${esc(noPercent)}% NO</span>`:''}
          </a>
        </div>
        <div class="community-box">
