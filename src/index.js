@@ -42,7 +42,7 @@ async function getPersonalizedBills(env,{
   userId=null,
   myVote='all',
   repVote='all',
-  limit=150
+  limit=5000
 }={}){
   const validMyVote=new Set(['all','voted','not-voted']);
   const validRepVote=new Set(['all','voted','not-voted']);
@@ -121,8 +121,8 @@ async function getPersonalizedBills(env,{
   const stmt=env.DB.prepare(sql);
 
   const result=q
-    ? await stmt.bind(userId??'',representativeId??-1,`%${q}%`,Math.max(limit,300)).all()
-    : await stmt.bind(userId??'',representativeId??-1,Math.max(limit,300),Math.max(limit,300)).all();
+    ? await stmt.bind(userId??'',representativeId??-1,`%${q}%`,Math.max(limit,5000)).all()
+    : await stmt.bind(userId??'',representativeId??-1,Math.max(limit,5000),Math.max(limit,5000)).all();
 
   // The no-query SQL uses ?4, so bind positions must still exist. Re-run with a
   // query-neutral placeholder when q is empty.
@@ -166,7 +166,7 @@ async function getPersonalizedBills(env,{
      LIMIT ?3`;
 
     rows=(await env.DB.prepare(noQuerySql)
-      .bind(userId??'',representativeId??-1,Math.max(limit,300))
+      .bind(userId??'',representativeId??-1,Math.max(limit,5000))
       .all()).results??[];
   }
 
@@ -1491,10 +1491,10 @@ export default {
             userId:session.user.id,
             myVote:'all',
             repVote,
-            limit:150
+            limit:5000
           })
         : {
-            bills:await getBills(env,query,150),
+            bills:await getBills(env,query,5000),
             myVote:'all',
             repVote:'all',
             representativeAvailable:false

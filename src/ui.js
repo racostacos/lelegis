@@ -118,7 +118,8 @@ export function renderBills({
    <div class="small muted" style="margin-top:12px">${esc(b.official_status||'')}</div>
  </a>`;
 
- const needsVote=signedIn?bills.filter(b=>!b.user_voted):bills;
+ const allNeedsVote=signedIn?bills.filter(b=>!b.user_voted):bills;
+ const needsVote=signedIn?allNeedsVote.slice(0,150):allNeedsVote;
  const voted=signedIn?bills.filter(b=>b.user_voted):[];
 
  const repFilter=signedIn&&representativeAvailable?`
@@ -158,7 +159,7 @@ export function renderBills({
              <div class="eyebrow">Needs your vote</div>
              <h2 style="margin:4px 0 0">Needs your vote</h2>
            </div>
-           <span class="chip">${esc(needsVote.length)} bill${needsVote.length===1?'':'s'}</span>
+           <span class="chip">${esc(needsVote.length)} shown · ${esc(allNeedsVote.length)} remaining</span>
          </div>
          <div class="stack">
            ${needsVoteHtml||'<div class="empty">No bills in this view need your vote.</div>'}
