@@ -11,13 +11,14 @@ const expected=[
   [['HB1','HB2'],['HB1'],['HB2']],
   [['HB3','HB4'],['HB3'],['HB4']]
 ];
+const hasBill=(html,instrument)=>html.includes(`href="/bills/${instrument}"`)||html.includes(`href="/bills/${instrument}?`);
 
 test('every combination of user and representative filters intersects correctly',()=>{
   for(const [i,myVote] of states.entries())for(const [j,repVote] of states.entries()){
     const filtered=filterTrackerBills(bills,myVote,repVote);
     assert.deepEqual(filtered.map(b=>b.instrument),expected[i][j]);
     const html=renderBills({bills:filtered,signedIn:true,representativeAvailable:true,myVote,repVote});
-    for(const b of bills)assert.equal(html.includes(`href="/bills/${b.instrument}"`),expected[i][j].includes(b.instrument),`${myVote}/${repVote}/${b.instrument}`);
+    for(const b of bills)assert.equal(hasBill(html,b.instrument),expected[i][j].includes(b.instrument),`${myVote}/${repVote}/${b.instrument}`);
     assert.equal(html.includes('>Needs your vote</h2>'),myVote!=='voted');
     assert.equal(html.includes('>Voted pile</h2>'),myVote!=='not-voted');
   }
@@ -60,7 +61,7 @@ test('all 27 chamber and vote filter combinations produce the expected cards',()
     const filtered=filterTrackerBills(filterTrackerBills(records,myVote,repVote),'all','all',chamber);
     assert.deepEqual(filtered.map(b=>b.instrument),wanted);
     const html=renderBills({bills:filtered,signedIn:true,representativeAvailable:true,myVote,repVote,chamber});
-    for(const b of records)assert.equal(html.includes(`href="/bills/${b.instrument}"`),wanted.includes(b.instrument));
+    for(const b of records)assert.equal(hasBill(html,b.instrument),wanted.includes(b.instrument));
   }
 });
 

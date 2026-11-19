@@ -5,6 +5,7 @@ import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth
 import { comparisonPriority, compareBillMembers } from './lib/bill-member-comparison.js';
 import { isCeremonialResolution } from './lib/ceremonial-resolutions.js';
 import { filterTrackerBills, normalizeTrackerChamber } from './lib/tracker-filters.js';
+import { billBackQuery, resetSignInPath, trackerBackPath } from './lib/tracker-navigation.js';
 import {
   renderHome, renderBills, renderBill, renderLegislators, renderLegislator,
   renderLogin, renderAccount, renderRepresentativeOnboarding, renderNotFound
@@ -1185,7 +1186,7 @@ export default {
     }
 
     if(url.pathname==='/auth/google'){
-      try{return await beginGoogleSignIn(env,request,safeNext(url.searchParams.get('next')))}
+      try{return await beginGoogleSignIn(env,request,resetSignInPath(safeNext(url.searchParams.get('next'))))}
       catch(err){return html(renderNotFound(`Could not start Google sign-in: ${String(err?.message??err)}`),500)}
     }
 
@@ -1255,7 +1256,7 @@ export default {
 
         return new Response(null,{
           status:303,
-          headers:{location:`/bills/${encodeURIComponent(instrument)}#cast-vote`}
+          headers:{location:`/bills/${encodeURIComponent(instrument)}${billBackQuery(url.searchParams.get('back'))}#cast-vote`}
         });
       }catch(err){
         return html(
@@ -1502,6 +1503,7 @@ export default {
 
       return html(renderBill(bill,{
         signedIn,
+        backPath:trackerBackPath(url.searchParams.get('back')),
         position:community.user_position,
         userName,
         community,

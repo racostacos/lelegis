@@ -1,5 +1,7 @@
 const esc=(value='')=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 
+import {billBackQuery,trackerBackPath} from './lib/tracker-navigation.js';
+
 const partyInitial=party=>{
   const p=String(party??'').trim().toUpperCase();
   if(['D','DEM','DEMOCRAT','DEMOCRATIC'].includes(p))return 'D';
@@ -118,7 +120,8 @@ export function renderBills({
    style="text-decoration:none;cursor:pointer;font-weight:800;${active?'':'background:transparent'}"
  >${esc(label)}</a>`;
 
- const card=b=>`<a class="bill-card" href="/bills/${encodeURIComponent(b.instrument)}">
+ const backQuery=billBackQuery(filterUrl());
+ const card=b=>`<a class="bill-card" href="/bills/${encodeURIComponent(b.instrument)}${esc(backQuery)}">
    <div class="meta">
      <span class="chip ${String(b.origin_chamber).toLowerCase()}">${esc(b.instrument)}</span>
      <span class="chip status">${esc(statusLabel(b.normalized_status))}</span>
@@ -205,6 +208,17 @@ export function renderBills({
        </form>
      </section>
 
+     <script>
+     // History navigation retains filters; explicitly refreshing the tracker resets them.
+     if(performance.getEntriesByType('navigation')[0]?.type==='reload'){
+       const url=new URL(location.href);
+       const keys=['repVote','myVote','chamber'];
+       if(keys.some(key=>url.searchParams.has(key))){
+         for(const key of keys)url.searchParams.delete(key);
+         location.replace(url.pathname+url.search+url.hash);
+       }
+     }
+     </script>
      ${repFilter}
      ${myFilter}
      ${chamberFilter}
@@ -248,7 +262,9 @@ export function renderBills({
  });
 }
 
-export function renderBill(bill,{signedIn=false,position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0,summaryText=null,summarySources=[],representativeComparisons=[]}={}){
+export function renderBill(bill,{signedIn=false,backPath='/',position=null,userName=null,community={yes:0,no:0,total:0,yes_percent:0},comments=[],commentCount=0,stage=0,summaryText=null,summarySources=[],representativeComparisons=[]}={}){
+ const back=trackerBackPath(backPath);
+ const backQuery=billBackQuery(back);
  const stages=['Introduced','In Committee','On the Floor','Passed House','Passed Senate','Signed'];
  const latest=(bill.actions??[]).at(-1);
  const introduced=(bill.actions??[])[0]?.action_date??bill.created_at?.slice?.(0,10)??'';
@@ -296,7 +312,7 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
    signedIn,
    userName,
    body:`<main class="bill-detail-wrap">
-     <div class="bill-topline"><a class="bill-back" href="/">← Bills</a><button class="bill-share" id="share-bill">Share</button></div>
+     <div class="bill-topline"><a class="bill-back" href="${esc(back)}">← Bills</a><button class="bill-share" id="share-bill">Share</button></div>
      <div class="bill-kicker">${esc(bill.instrument)}</div>
      <h1 class="bill-title">${esc(bill.subject||bill.instrument)}</h1>
 
@@ -330,12 +346,12 @@ export function renderBill(bill,{signedIn=false,position=null,userName=null,comm
      <section class="bill-section" id="cast-vote">
        <h2 class="bill-section-title">Cast your vote</h2>
        <div class="vote-choice-grid">
-         <a class="vote-choice ${position==='YES'?'selected':''}" href="/vote/${encodeURIComponent(bill.instrument)}/YES" style="text-decoration:none">
+         <a class="vote-choice ${position==='YES'?'selected':''}" href="/vote/${encodeURIComponent(bill.instrument)}/YES${esc(backQuery)}" style="text-decoration:none">
            <span class="overline">${position==='YES'?'Your vote':'Your read'}</span>
            <strong>Vote Yes</strong>
            <span>Back the bill</span>
          </a>
-         <a class="vote-choice no ${position==='NO'?'selected':''}" href="/vote/${encodeURIComponent(bill.instrument)}/NO" style="text-decoration:none">
+         <a class="vote-choice no ${position==='NO'?'selected':''}" href="/vote/${encodeURIComponent(bill.instrument)}/NO${esc(backQuery)}" style="text-decoration:none">
            <span class="overline">${position==='NO'?'Your vote':'Your read'}</span>
            <strong>Vote No</strong>
            <span>Block the bill</span>
@@ -399,8 +415,9 @@ const instrument=${JSON.stringify(bill.instrument)};
 
 document.getElementById('share-bill')?.addEventListener('click',async()=>{
   try{
-    if(navigator.share) await navigator.share({title:document.title,url:location.href});
-    else { await navigator.clipboard.writeText(location.href); alert('Bill link copied.'); }
+    const shareUrl=new URL(location.href);shareUrl.searchParams.delete('back');
+    if(navigator.share) await navigator.share({title:document.title,url:shareUrl.href});
+    else { await navigator.clipboard.writeText(shareUrl.href); alert('Bill link copied.'); }
   }catch{}
 });
 
