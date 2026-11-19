@@ -106,6 +106,12 @@ export function renderBills({
      <span class="chip ${String(b.origin_chamber).toLowerCase()}">${esc(b.instrument)}</span>
      <span class="chip status">${esc(statusLabel(b.normalized_status))}</span>
      ${b.act_number?`<span class="chip">Act ${esc(b.act_number)}</span>`:''}
+     ${!b.has_been_introduced
+       ? '<span class="chip" style="background:#fff1cc;color:#765500">No introduction recorded</span>'
+       : ''}
+     ${!b.has_any_vote
+       ? '<span class="chip" style="background:#f4e6e4;color:#8a332d">No official vote recorded</span>'
+       : ''}
      ${signedIn&&b.user_voted
        ? `<span class="chip ${voteClass(b.user_position)}">Your vote: ${esc(b.user_position||'')}</span>`
        : ''}

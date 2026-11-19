@@ -33,7 +33,22 @@ const getBillDetail=async(env,instrument)=>{
 
 const getBills=async(env,query='',limit=100)=>{
   const q=query.trim();
-  if(!q){const{results}=await env.DB.prepare(`SELECT b.id,b.instrument,b.origin_chamber,b.subject,b.official_description,b.official_status,b.normalized_status,b.act_number,b.effective_date FROM bills b JOIN sessions s ON s.id=b.session_id ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC LIMIT ?1`).bind(limit).all();return results}
+  if(!q){const{results}=await env.DB.prepare(`SELECT
+    b.id,b.instrument,b.origin_chamber,b.subject,b.official_description,
+    b.official_status,b.normalized_status,b.act_number,b.effective_date,
+    EXISTS(
+      SELECT 1 FROM vote_events ve
+      WHERE ve.bill_id=b.id
+    ) AS has_any_vote,
+    EXISTS(
+      SELECT 1 FROM bill_actions ba
+      WHERE ba.bill_id=b.id
+        AND (
+          UPPER(COALESCE(ba.normalized_action,'')) LIKE '%INTRODUC%'
+          OR UPPER(COALESCE(ba.official_text,'')) LIKE '%INTRODUC%'
+        )
+    ) AS has_been_introduced
+   FROM bills b JOIN sessions s ON s.id=b.session_id ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC LIMIT ?1`).bind(limit).all();return results}
   const like=`%${q}%`;const{results}=await env.DB.prepare(`SELECT b.id,b.instrument,b.origin_chamber,b.subject,b.official_description,b.official_status,b.normalized_status,b.act_number,b.effective_date FROM bills b JOIN sessions s ON s.id=b.session_id WHERE b.instrument LIKE ?1 OR b.subject LIKE ?1 OR b.official_description LIKE ?1 OR b.official_status LIKE ?1 ORDER BY s.start_date DESC,b.updated_at DESC,b.id DESC LIMIT ?2`).bind(like,limit).all();return results
 };
 
@@ -91,6 +106,20 @@ async function getPersonalizedBills(env,{
        b.effective_date,
        EXISTS(
          SELECT 1
+           FROM vote_events ve_any
+          WHERE ve_any.bill_id=b.id
+       ) AS has_any_vote,
+       EXISTS(
+         SELECT 1
+           FROM bill_actions ba_intro
+          WHERE ba_intro.bill_id=b.id
+            AND (
+              UPPER(COALESCE(ba_intro.normalized_action,'')) LIKE '%INTRODUC%'
+              OR UPPER(COALESCE(ba_intro.official_text,'')) LIKE '%INTRODUC%'
+            )
+       ) AS has_been_introduced,
+       EXISTS(
+         SELECT 1
            FROM user_bill_positions ubp
           WHERE ubp.bill_id=b.id
             AND ubp.user_id=?1
@@ -140,6 +169,20 @@ async function getPersonalizedBills(env,{
        b.act_number,
        b.effective_date,
        EXISTS(
+         SELECT 1
+           FROM vote_events ve_any
+          WHERE ve_any.bill_id=b.id
+       ) AS has_any_vote,
+       EXISTS(
+         SELECT 1
+           FROM bill_actions ba_intro
+          WHERE ba_intro.bill_id=b.id
+            AND (
+              UPPER(COALESCE(ba_intro.normalized_action,'')) LIKE '%INTRODUC%'
+              OR UPPER(COALESCE(ba_intro.official_text,'')) LIKE '%INTRODUC%'
+            )
+       ) AS has_been_introduced,
+       EXISTS(
          SELECT 1 FROM user_bill_positions ubp
           WHERE ubp.bill_id=b.id AND ubp.user_id=?1
        ) AS user_voted,
@@ -185,7 +228,9 @@ async function getPersonalizedBills(env,{
     bills:filtered.slice(0,limit).map(row=>({
       ...row,
       user_voted:Boolean(row.user_voted),
-      representative_voted:Boolean(row.representative_voted)
+      representative_voted:Boolean(row.representative_voted),
+      has_any_vote:Boolean(row.has_any_vote),
+      has_been_introduced:Boolean(row.has_been_introduced)
     })),
     myVote:userFilter,
     repVote:repFilter,
