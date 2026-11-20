@@ -58,37 +58,113 @@ const chart = (rows, name) => {
     <span style="overflow-wrap:anywhere">${esc(row.label.replaceAll('_',' '))}</span><span style="background:#f4e9e7;border-radius:7px">${bar(row.count,max)}</span><strong style="text-align:right">${row.count}</strong>
   </div>`).join('')}</div>`;
 };
-// Chronological action counts, rendered as an accessible, responsive SVG trend.
+// Interactive chronological data: pointer hover, keyboard focus, click/tap selection.
 const activityChart = rows => {
   if (!rows.length) return '<p class="muted">No recorded data for these filters.</p>';
   const sorted = [...rows].sort((a,b) => String(a.label).localeCompare(String(b.label)));
   const values = sorted.map(r => Math.max(0, Number(r.count) || 0));
   const max = Math.max(1, ...values);
-  const width = 680, height = 248, left = 58, right = 22, top = 32, bottom = 49;
-  const plotW = width - left - right, plotH = height - top - bottom;
-  const x = i => left + (sorted.length === 1 ? plotW / 2 : i * plotW / (sorted.length - 1));
-  const y = n => top + plotH * (1 - n / max);
-  const points = values.map((n,i) => `${x(i).toFixed(2)},${y(n).toFixed(2)}`).join(' ');
-  const peak = values.indexOf(Math.max(...values));
+  const width = 680, height = 260, left = 64, right = 24, top = 36, bottom = 52;
+  const plotW = width-left-right, plotH = height-top-bottom;
+  const x = i => left+(sorted.length===1 ? plotW/2 : i*plotW/(sorted.length-1));
+  const y = n => top+plotH*(1-n/max);
   const fmt = n => Number(n).toLocaleString('en-US');
   const month = label => {
-    const match = /^(\\d{4})-(\\d{2})$/.exec(String(label));
+    const match = /^(\d{4})-(\d{2})$/.exec(String(label));
     if (!match) return String(label);
-    const index = Number(match[2]) - 1;
-    return index >= 0 && index < 12 ? new Date(Date.UTC(Number(match[1]), index, 1)).toLocaleString('en-US',{month:'short',timeZone:'UTC'}) : String(label);
+    const index = Number(match[2])-1;
+    return index>=0&&index<12 ? new Date(Date.UTC(Number(match[1]),index,1)).toLocaleString('en-US',{month:'short',timeZone:'UTC'}) : String(label);
   };
+  const coordinates = values.map((n,i) => ({x:x(i),y:y(n)}));
   const grid = [0,0.5,1].map(f => {
-    const yy = y(max*f);
-    return `<line x1="${left}" y1="${yy}" x2="${width-right}" y2="${yy}" stroke="#e9dedc" stroke-width="1"/><text x="${left-12}" y="${yy+4}" text-anchor="end" font-size="12" fill="#607080">${esc(fmt(Math.round(max*f)))}</text>`;
+    const yy=y(max*f);
+    return `<line x1="${left}" y1="${yy}" x2="${width-right}" y2="${yy}" stroke="#e9dedc"/><text x="${left-12}" y="${yy+4}" text-anchor="end" font-size="12" fill="#607080">${esc(fmt(Math.round(max*f)))}</text>`;
   }).join('');
-  const circles = sorted.map((r,i) => `<circle cx="${x(i)}" cy="${y(values[i])}" r="5" fill="${i===peak?'#aa3329':'#fff'}" stroke="#aa3329" stroke-width="2.5"><title>${esc(`${r.label}: ${fmt(values[i])} recorded actions`)}</title></circle>`).join('');
-  const labels = sorted.map((r,i) => `<text x="${x(i)}" y="${height-17}" text-anchor="middle" font-size="13" fill="#34465a">${esc(month(r.label))}</text>`).join('');
-  const peakY = Math.max(17, y(values[peak])-14);
-  return `<div style="width:100%;overflow:hidden"><svg role="img" aria-label="Recorded legislative actions by month: ${esc(sorted.map((r,i)=>`${r.label}: ${fmt(values[i])}`).join(', '))}" viewBox="0 0 ${width} ${height}" width="100%" style="display:block;height:auto;max-width:100%;font-family:Arial,sans-serif">
-    ${grid}<polyline points="${points}" fill="none" stroke="#aa3329" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-    ${circles}${labels}
-    <text x="${x(peak)}" y="${peakY}" text-anchor="middle" font-weight="700" font-size="14" fill="#aa3329">Peak: ${esc(fmt(values[peak]))}</text>
-  </svg></div>`;
+  const points = coordinates.map(p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+  const targets = sorted.map((r,i)=>{
+    const p=coordinates[i];
+    return `<circle class="activity-hit" role="button" tabindex="0" aria-label="${esc(`${r.label}, ${fmt(values[i])} recorded actions. Press Enter to select`)}" data-index="${i}" data-month="${esc(r.label)}" data-count="${values[i]}" data-x="${p.x.toFixed(2)}" data-y="${p.y.toFixed(2)}" cx="${p.x}" cy="${p.y}" r="13" fill="transparent" stroke="transparent" stroke-width="2" style="cursor:pointer;outline-offset:2px"/>`;
+  }).join('');
+  const dots = coordinates.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="#fff" stroke="#aa3329" stroke-width="2" pointer-events="none"/>`).join('');
+  const labels = sorted.map((r,i)=>`<text x="${x(i)}" y="${height-20}" text-anchor="middle" font-size="13" fill="#34465a">${esc(month(r.label))}</text>`).join('');
+  const peak=values.indexOf(Math.max(...values));
+  return `<div class="activity-interactive" style="width:100%;min-width:0">
+    <svg viewBox="0 0 ${width} ${height}" width="100%" role="group" aria-label="Interactive legislative actions by month. Hover, select a point, or use the arrow keys." style="display:block;max-width:100%;height:auto;font-family:Arial,sans-serif">
+      ${grid}<polyline points="${points}" fill="none" stroke="#aa3329" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      ${dots}${labels}
+      <line class="activity-guide" x1="0" x2="0" y1="${top}" y2="${height-bottom}" stroke="#aa3329" stroke-width="1.5" stroke-dasharray="4 4" visibility="hidden" pointer-events="none"/>
+      <circle class="activity-selected" cx="0" cy="0" r="8" fill="#aa3329" stroke="white" stroke-width="3" visibility="hidden" pointer-events="none"/>
+      ${targets}
+    </svg>
+    <div class="activity-readout" aria-live="polite" aria-atomic="true" style="border:1px solid #e3dedb;border-radius:9px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline">
+      <strong class="activity-month">${esc(sorted[peak].label)}</strong>
+      <span class="activity-count" style="font-weight:750;color:#aa3329">${esc(fmt(values[peak]))} actions</span>
+      <span class="activity-change" style="color:#607080;font-size:12px">Peak month. Select a point to inspect it.</span>
+    </div>
+    <p class="small muted" style="margin:8px 0 0">Hover or tap any point. Keyboard: Tab to points, arrow keys to change month, Enter to pin, Escape to reset.</p>
+  </div>
+  <script>
+  (() => {
+    const root = document.currentScript.previousElementSibling;
+    if (!root || !root.classList.contains('activity-interactive')) return;
+    const targets = Array.from(root.querySelectorAll('.activity-hit'));
+    const guide = root.querySelector('.activity-guide');
+    const dot = root.querySelector('.activity-selected');
+    const label = root.querySelector('.activity-month');
+    const amount = root.querySelector('.activity-count');
+    const change = root.querySelector('.activity-change');
+    const fmt = n => n.toLocaleString('en-US');
+    let pinned = null;
+    const update = (i) => {
+      const item = targets[i];
+      if (!item) return;
+      const count = Number(item.dataset.count);
+      const previous = i ? Number(targets[i-1].dataset.count) : null;
+      const difference = previous === null ? 'First recorded month' : (count===previous?'No change from previous month':((count>previous?'+':'')+fmt(count-previous)+' actions vs. previous month'));
+      label.textContent = item.dataset.month;
+      amount.textContent = fmt(count)+' actions';
+      change.textContent = difference;
+      guide.setAttribute('x1', item.dataset.x);
+      guide.setAttribute('x2', item.dataset.x);
+      guide.setAttribute('visibility', 'visible');
+      dot.setAttribute('cx', item.dataset.x);
+      dot.setAttribute('cy', item.dataset.y);
+      dot.setAttribute('visibility', 'visible');
+      targets.forEach((target,j)=>target.setAttribute('aria-pressed',String(pinned===j)));
+    };
+    const reset = () => {
+      if(pinned!==null) { update(pinned); return; }
+      label.textContent = 'Select a month';
+      amount.textContent = '';
+      change.textContent = 'Hover, tap, or use the keyboard to inspect a point.';
+      guide.setAttribute('visibility','hidden');
+      dot.setAttribute('visibility','hidden');
+    };
+    targets.forEach((item,i)=>{
+      item.setAttribute('aria-pressed','false');
+      item.addEventListener('pointerenter',()=>update(i));
+      item.addEventListener('pointerleave',reset);
+      item.addEventListener('focus',()=>update(i));
+      item.addEventListener('blur',reset);
+      const select = () => {pinned=pinned===i?null:i; pinned===null?reset():update(pinned);};
+      item.addEventListener('click',select);
+      item.addEventListener('keydown',event=>{
+        if(event.key==='ArrowRight'||event.key==='ArrowLeft'){
+          event.preventDefault();
+          const next=Math.max(0,Math.min(targets.length-1,i+(event.key==='ArrowRight'?1:-1)));
+          targets[next].focus();
+        } else if(event.key==='Enter'||event.key===' '){
+          event.preventDefault();
+          select();
+        } else if(event.key==='Escape'){
+          event.preventDefault();
+          pinned=null;
+          reset();
+        }
+      });
+    });
+  })();
+  </script>`;
 };
 // Interactive chamber composition, with accessible slice tooltips and drill-down links.
 const chamberPie = (rows, filters = {}) => {
