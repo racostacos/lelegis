@@ -99,7 +99,7 @@ export function renderAnalyticsBody(data) {
       <div class="eyebrow">Legislative statistics</div><h1>Analytics</h1>
       <p class="lede">Counts from LeLegis's stored Louisiana Legislature records. Ceremonial commendations and condolences are excluded using the bill tracker's existing rule.</p>
       <form action="/analytics" method="get" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-top:22px">
-        <label style="font-size:13px;font-weight:750">Session<br><select name="session" class="field">${sessions.map(s => option(s.session_code,s.session_name || s.session_code,filters.session)).join('')}</select></label>
+        <label style="font-size:13px;font-weight:750">Session<br><select name="session" class="field">${sessions.map(s => option(s.session_code,s.session_code,filters.session)).join('')}</select></label>
         <label style="font-size:13px;font-weight:750">Chamber<br><select name="chamber" class="field">${[['ALL','Both'],['HOUSE','House'],['SENATE','Senate']].map(([v,l])=>option(v,l,filters.chamber)).join('')}</select></label>
         <label style="font-size:13px;font-weight:750">Measure type<br><select name="type" class="field">${['ALL','HB','SB','HR','SR','HCR','SCR'].map(v=>option(v,v==='ALL'?'All types':v,filters.type)).join('')}</select></label>
         <button type="submit">Apply filters</button>
