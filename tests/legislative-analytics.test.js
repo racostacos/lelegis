@@ -26,6 +26,38 @@ test('analytics uses stored rows, removes ceremonial commendations and counts pr
   assert.deepEqual(result.months.map(r=>r.count),[1,1]);
 });
 
+test('originating party counts bills once, excludes ceremonial records and handles mixed or missing parties', async () => {
+  const responses = [
+    [{ id:1, session_code:'26RS', indexed_bills:5 }],
+    [
+      { id:1, instrument:'HB1', subject:'TAX', origin_chamber:'HOUSE', instrument_type:'HB' },
+      { id:2, instrument:'SB2', subject:'HEALTH', origin_chamber:'SENATE', instrument_type:'SB' },
+      { id:3, instrument:'HB3', subject:'EDUCATION', origin_chamber:'HOUSE', instrument_type:'HB' },
+      { id:4, instrument:'SR4', subject:'COMMENDATIONS', official_description:'Commends a resident', origin_chamber:'SENATE', instrument_type:'SR' },
+      { id:5, instrument:'HR5', subject:'HOUSING', origin_chamber:'HOUSE', instrument_type:'HR' }
+    ],
+    [],
+    [
+      { bill_id:1, legislator_id:1, party:'D', display_name:'A' },
+      { bill_id:1, legislator_id:2, party:'DEMOCRAT', display_name:'B' },
+      { bill_id:2, legislator_id:3, party:'R', display_name:'C' },
+      { bill_id:3, legislator_id:4, party:'D', display_name:'D' },
+      { bill_id:3, legislator_id:5, party:'REPUBLICAN', display_name:'E' },
+      { bill_id:4, legislator_id:6, party:'R', display_name:'F' }
+    ]
+  ];
+  let n=0;
+  const db={prepare:()=>({bind(){return this},async all(){return {results:responses[n++]}}})};
+  const data=await getLegislativeAnalytics({DB:db});
+  assert.deepEqual(Object.fromEntries(data.parties.map(p=>[p.label,p.count])), {
+    Democrats:1, Republicans:1, 'Multiple parties':1, 'Not recorded':1
+  });
+  const html=renderAnalyticsBody(data);
+  assert.match(html,/Originating party/);
+  assert.match(html,/Democrats/);
+  assert.match(html,/Republicans/);
+});
+
 test('preview links are distinct and dashboard escapes source text',async()=>{
   const data=await getLegislativeAnalytics({DB:fakeDb()});
   const html=renderAnalyticsPreview(data);
