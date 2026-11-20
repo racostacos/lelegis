@@ -4,10 +4,11 @@ import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
 import { calculateMemberAlignment, compareBillMembers, selectMemberFloorVote } from './lib/bill-member-comparison.js';
 import { isCeremonialResolution } from './lib/ceremonial-resolutions.js';
+import { getLegislativeAnalytics } from './lib/legislative-analytics.js';
 import { filterTrackerBills, normalizeTrackerChamber } from './lib/tracker-filters.js';
 import { billBackQuery, resetSignInPath, trackerBackPath } from './lib/tracker-navigation.js';
 import {
-  renderHome, renderBills, renderBill, renderLegislators, renderLegislator,
+  renderHome, renderBills, renderBill, renderLegislators, renderLegislator, renderAnalytics,
   renderLogin, renderAccount, renderRepresentativeOnboarding, renderNotFound
 } from './ui.js';
 
@@ -1454,6 +1455,15 @@ export default {
       return html(renderAccount({user:session.user,positions,alignment,settings,members,stats}));
     }
 
+    if(url.pathname==='/analytics'||url.pathname==='/analytics/'){
+      const data=await getLegislativeAnalytics(env,{
+        session:url.searchParams.get('session'),
+        chamber:url.searchParams.get('chamber'),
+        type:url.searchParams.get('type')
+      });
+      return html(renderAnalytics(data,{signedIn,userName}));
+    }
+
     if(url.pathname==='/onboarding/representatives'||url.pathname==='/onboarding/representatives/'){
       if(!signedIn)return Response.redirect(`${url.origin}/login?next=%2Fonboarding%2Frepresentatives`,302);
       const settings=await getSettings(env,session.user.id);
@@ -1481,7 +1491,9 @@ export default {
             representativeAvailable:false
           };
 
+      const analyticsPreview=await getLegislativeAnalytics(env,{}, {preview:true}).catch(()=>null);
       return html(renderBills({
+        analyticsPreview,
         bills:filterTrackerBills(billData.bills,'all','all',chamber).filter(bill=>!isCeremonialResolution(bill)),
         query,
         signedIn,

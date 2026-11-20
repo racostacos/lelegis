@@ -1,6 +1,7 @@
 const esc=(value='')=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 
 import {billBackQuery,trackerBackPath} from './lib/tracker-navigation.js';
+import {renderAnalyticsPreview,renderAnalyticsBody} from './lib/analytics-ui.js';
 
 const partyInitial=party=>{
   const p=String(party??'').trim().toUpperCase();
@@ -76,6 +77,10 @@ button,.button{border:0;border-radius:14px;padding:13px 16px;background:var(--te
 <header class="sitebar"><nav class="nav"><a class="brand" href="/">LeLegis</a><div class="navlinks"><a class="${active==='bills'?'active':''}" href="/">Bills</a><a class="${active==='legislators'?'active':''}" href="/legislators">Legislators</a><a class="${active==='account'?'active':''}" href="${signedIn?'/account':'/login'}">${signedIn?esc(firstName(userName)):'Sign in'}</a></div></nav></header>
 ${body}<footer class="footer">LeLegis · Louisiana legislative data from official Louisiana Legislature sources.</footer></body></html>`;
 
+export function renderAnalytics(data,{signedIn=false,userName=null}={}){
+ return page({title:'Legislative analytics',signedIn,userName,body:renderAnalyticsBody(data)});
+}
+
 export function renderHome({recentBills=[],signedIn=false,userName=null}={}){
  const cards=recentBills.slice(0,6).map(b=>`<a class="bill-card" href="/bills/${encodeURIComponent(b.instrument)}">
    <div class="meta">
@@ -96,6 +101,7 @@ export function renderHome({recentBills=[],signedIn=false,userName=null}={}){
 
 export function renderBills({
  bills=[],
+ analyticsPreview=null,
  query='',
  signedIn=false,
  userName=null,
@@ -201,8 +207,10 @@ export function renderBills({
    userName,
    body:`<main class="wrap">
      <section class="hero">
-       <div class="eyebrow">Bill tracker</div>
-       <h1>Bills</h1>
+       <div style="display:flex;justify-content:space-between;align-items:start;gap:20px;flex-wrap:wrap">
+         <div><div class="eyebrow">Bill tracker</div><h1>Bills</h1></div>
+         ${analyticsPreview?renderAnalyticsPreview(analyticsPreview):''}
+       </div>
        <form class="search" action="/" method="get">
          <input name="q" value="${esc(query)}" placeholder="Search bill number, subject, description or status">
          ${signedIn&&repVote!=='all'?`<input type="hidden" name="repVote" value="${esc(repVote)}">`:''}
