@@ -5,6 +5,7 @@ import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth
 import { calculateMemberAlignment, compareBillMembers, selectMemberFloorVote } from './lib/bill-member-comparison.js';
 import { isCeremonialResolution } from './lib/ceremonial-resolutions.js';
 import { getLegislativeAnalytics } from './lib/legislative-analytics.js';
+import { getPowerComposition } from './lib/power-dashboard.js';
 import { filterTrackerBills, normalizeTrackerChamber } from './lib/tracker-filters.js';
 import { billBackQuery, resetSignInPath, trackerBackPath } from './lib/tracker-navigation.js';
 import {
@@ -1461,6 +1462,7 @@ export default {
         chamber:url.searchParams.get('chamber'),
         type:url.searchParams.get('type')
       });
+      data.power=await getPowerComposition(env);
       return html(renderAnalytics(data,{signedIn,userName}));
     }
 

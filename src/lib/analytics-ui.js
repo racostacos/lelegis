@@ -1,3 +1,5 @@
+import { renderPowerSection } from './power-dashboard.js';
+
 const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 const bar = (n, max) => `<span style="display:block;height:7px;min-width:${n ? '2px' : '0'};width:${max ? Math.max(2, 100*n/max) : 0}%;border-radius:5px;background:#aa3329"></span>`;
 // Compact, distinct previews. Each graphic uses the same stored counts as /analytics.
@@ -71,16 +73,17 @@ export function renderAnalyticsBody(data) {
         <button type="submit">Apply filters</button>
       </form>
     </section>
+    ${renderPowerSection(data.power)}
     <section style="margin:26px 0"><div class="eyebrow">Measures in view</div><div style="font:700 42px Georgia,serif">${data.total.toLocaleString('en-US')}</div><div class="small muted">One record per instrument in the selected session.</div></section>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr))">
-      <section id="subjects" class="panel"><h2>By subject</h2><p class="small muted">Official subject labels, not inferred policy categories.</p>${chart(data.subjects.slice(0,20))}</section>
-      <section id="outcomes" class="panel"><h2>Recorded outcomes</h2><p class="small muted">Stored status values. Adoption of a resolution is not passage of an ordinary bill.</p>${chart(data.outcomes)}</section>
-      <section id="activity" class="panel"><h2>Activity over time</h2><p class="small muted">Number of recorded legislative actions by month, not number of unique bills.</p>${chart(data.months)}</section>
-      <section id="chambers" class="panel"><h2>Originating chamber</h2>${chart(data.chambers)}</section>
+      <details id="subjects" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">By subject</summary><p class="small muted">Official subject labels, not inferred policy categories.</p>${chart(data.subjects.slice(0,20))}</details>
+      <details id="outcomes" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Recorded outcomes</summary><p class="small muted">Stored status values. Adoption of a resolution is not passage of an ordinary bill.</p>${chart(data.outcomes)}</details>
+      <details id="activity" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Activity over time</summary><p class="small muted">Number of recorded legislative actions by month, not number of unique bills.</p>${chart(data.months)}</details>
+      <details id="chambers" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Originating chamber</summary>${chart(data.chambers)}</details>
       <section id="parties" class="panel"><h2>Originating party</h2><p class="small muted">One measure per recorded primary-author party. Measures with unknown or mixed authorship are shown separately.</p>${chart(data.parties ?? [])}</section>
     </div>
-    <section id="authors" class="panel" style="margin-top:22px"><h2>Primary authors</h2><p class="small muted">Number of eligible measures credited to each recorded primary author. Counts do not measure legislative effectiveness.</p>
+    <details id="authors" class="panel" open style="margin-top:22px"><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Primary authors</summary><p class="small muted">Number of eligible measures credited to each recorded primary author. Counts do not measure legislative effectiveness.</p>
       ${data.authors.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;text-align:left"><thead><tr><th style="padding:10px;border-bottom:1px solid #ccd8d3">Legislator</th><th>Chamber</th><th>Measures</th></tr></thead><tbody>${data.authors.map(a=>`<tr><td style="padding:10px;border-bottom:1px solid #e7eae9"><a href="/legislators/${encodeURIComponent(a.id)}">${esc(a.name)}</a></td><td>${esc(a.chamber)}</td><td>${a.count}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No primary authors recorded for these filters.</p>'}
-    </section>
+    </details>
   </main>`;
 }
