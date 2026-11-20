@@ -90,6 +90,42 @@ const activityChart = rows => {
     <text x="${x(peak)}" y="${peakY}" text-anchor="middle" font-weight="700" font-size="14" fill="#aa3329">Peak: ${esc(fmt(values[peak]))}</text>
   </svg></div>`;
 };
+// Interactive chamber composition, with accessible slice tooltips and drill-down links.
+const chamberPie = (rows, filters = {}) => {
+  const counts = new Map(rows.map(r => [String(r.label).toUpperCase(), Math.max(0, Number(r.count) || 0)]));
+  const items = [
+    { name: 'House', chamber: 'HOUSE', value: counts.get('HOUSE') ?? 0, color: '#aa3329' },
+    { name: 'Senate', chamber: 'SENATE', value: counts.get('SENATE') ?? 0, color: '#467dbd' }
+  ];
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  if (!total) return '<p class="muted">No recorded data for these filters.</p>';
+  const urlFor = chamber => `/analytics?session=${encodeURIComponent(filters.session ?? '')}&chamber=${chamber}&type=${encodeURIComponent(filters.type ?? 'ALL')}#chambers`;
+  const fmt = number => number.toLocaleString('en-US');
+  const percent = number => (100 * number / total).toFixed(1);
+  const cx = 120, cy = 120, radius = 102;
+  const coord = degrees => {
+    const radians = degrees * Math.PI / 180;
+    return [cx + radius * Math.cos(radians), cy + radius * Math.sin(radians)];
+  };
+  let angle = -90;
+  const paths = items.filter(item => item.value > 0).map(item => {
+    const portion = item.value / total;
+    const next = angle + portion * 360;
+    const [sx, sy] = coord(angle);
+    const [ex, ey] = coord(next);
+    const shape = portion >= 0.999999
+      ? `<circle cx="${cx}" cy="${cy}" r="${radius}"/>`
+      : `<path d="M ${cx} ${cy} L ${sx.toFixed(3)} ${sy.toFixed(3)} A ${radius} ${radius} 0 ${portion > .5 ? 1 : 0} 1 ${ex.toFixed(3)} ${ey.toFixed(3)} Z"/>`;
+    angle = next;
+    return `<a href="${urlFor(item.chamber)}" class="chamber-pie-link" aria-label="${item.name}: ${fmt(item.value)} measures, ${percent(item.value)} percent; filter to ${item.name}"><g fill="${item.color}" class="chamber-pie-slice">${shape}<title>${item.name}: ${fmt(item.value)} measures (${percent(item.value)}%). Click to filter.</title></g></a>`;
+  }).join('');
+  const legend = items.map(item => `<a href="${urlFor(item.chamber)}" style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid #e0e6e4;border-radius:9px;color:inherit;text-decoration:none" title="Show ${item.name}-originated measures"><span aria-hidden="true" style="width:13px;height:13px;border-radius:50%;flex:none;background:${item.color}"></span><span style="flex:1">${item.name}</span><strong>${fmt(item.value)}</strong><span style="color:#607080;min-width:50px;text-align:right">${percent(item.value)}%</span></a>`).join('');
+  return `<div style="display:flex;align-items:center;gap:25px;flex-wrap:wrap">
+    <style>.chamber-pie-slice{cursor:pointer;stroke:white;stroke-width:2;transform-origin:120px 120px;transition:filter .15s,transform .15s}.chamber-pie-link:hover .chamber-pie-slice,.chamber-pie-link:focus-visible .chamber-pie-slice{filter:brightness(1.12);transform:scale(1.035)}.chamber-pie-link:focus-visible{outline:3px solid #0d1b2a;outline-offset:3px}@media(prefers-reduced-motion:reduce){.chamber-pie-slice{transition:none}}</style>
+    <svg viewBox="0 0 240 240" width="240" height="240" style="width:min(100%,240px);height:auto;flex:0 1 240px;overflow:visible" role="group" aria-label="Originating chamber breakdown. Activate a slice to filter the dashboard.">${paths}</svg>
+    <div style="display:grid;gap:8px;flex:1 1 195px;min-width:0">${legend}<span class="small muted">Total ${fmt(total)} measures. Hover for values, or select a slice to filter.</span></div>
+  </div>`;
+};
 const option = (value, label, current) => `<option value="${esc(value)}"${value===current?' selected':''}>${esc(label)}</option>`;
 
 export function renderAnalyticsBody(data) {
@@ -111,7 +147,7 @@ export function renderAnalyticsBody(data) {
       <details id="subjects" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">By subject</summary><p class="small muted">Official subject labels, not inferred policy categories.</p>${chart(data.subjects.slice(0,20))}</details>
       <details id="outcomes" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Recorded outcomes</summary><p class="small muted">Stored status values. Adoption of a resolution is not passage of an ordinary bill.</p>${chart(data.outcomes)}</details>
       <details id="activity" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Activity over time</summary><p class="small muted">Number of recorded legislative actions by month, not number of unique bills. Hover over a point for details.</p>${activityChart(data.months)}</details>
-      <details id="chambers" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Originating chamber</summary>${chart(data.chambers)}</details>
+      <details id="chambers" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Originating chamber</summary>${chamberPie(data.chambers, filters)}</details>
       <details id="parties" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Originating party</summary><p class="small muted">One measure per recorded primary-author party. Measures with unknown or mixed authorship are shown separately.</p>${chart(data.parties ?? [])}</details>
     </div>
     <details id="authors" class="panel" open style="margin-top:22px"><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Primary authors</summary><p class="small muted">Number of eligible measures credited to each recorded primary author. Counts do not measure legislative effectiveness.</p>
