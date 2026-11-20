@@ -14,9 +14,13 @@ const countBy = (items, key) => {
 
 export async function getLegislativeAnalytics(env, input = {}, { preview = false } = {}) {
   const sessions = (await env.DB.prepare(
-    `SELECT id, session_code, session_name, start_date FROM sessions ORDER BY start_date DESC, id DESC`
+    `SELECT s.id, s.session_code, s.session_name, s.start_date,
+            (SELECT COUNT(*) FROM bills b WHERE b.session_id=s.id) AS indexed_bills
+       FROM sessions s ORDER BY s.start_date DESC, s.id DESC`
   ).all()).results ?? [];
-  const selected = sessions.find(s => s.session_code === input.session) ?? sessions[0];
+  const selected = sessions.find(s => s.session_code === input.session)
+    ?? sessions.find(s => Number(s.indexed_bills) > 0)
+    ?? sessions[0];
   const chamber = CHAMBERS.has(String(input.chamber ?? '').toUpperCase()) ? String(input.chamber).toUpperCase() : 'ALL';
   const type = TYPES.has(String(input.type ?? '').toUpperCase()) ? String(input.type).toUpperCase() : 'ALL';
   const filters = { session: selected?.session_code ?? '', chamber, type };
