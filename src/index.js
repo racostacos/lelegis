@@ -2,7 +2,7 @@ import { refreshBillDetailsForRequest } from './lib/bill-detail-sync.js';
 import { fetchSummaryDocuments as fetchOfficialSummaryDocuments } from './lib/bill-summary-docs.js';
 import { refreshBillForRequest, syncActiveSessions } from './lib/bill-sync.js';
 import { createAuth, getSession, beginGoogleSignIn, authProviders } from './auth.js';
-import { calculateMemberAlignment, compareBillMembers } from './lib/bill-member-comparison.js';
+import { calculateMemberAlignment, compareBillMembers, selectMemberFloorVote } from './lib/bill-member-comparison.js';
 import { isCeremonialResolution } from './lib/ceremonial-resolutions.js';
 import { filterTrackerBills, normalizeTrackerChamber } from './lib/tracker-filters.js';
 import { billBackQuery, resetSignInPath, trackerBackPath } from './lib/tracker-navigation.js';
@@ -215,9 +215,47 @@ async function getPersonalizedBills(env,{
   }));
 
   const filtered=filterTrackerBills(normalized,userFilter,repFilter);
+  const visible=filtered.slice(0,limit);
+
+  // Never fetch or attach individual positions for a bill the user has not voted on.
+  // Use a single batched lookup rather than one database query per card.
+  if(userId&&visible.some(b=>b.user_voted)&&(houseRepresentativeId||senateRepresentativeId)){
+    const rollCalls=(await env.DB.prepare(`
+      SELECT ubp.bill_id,b.instrument,l.id AS legislator_id,l.chamber,
+             l.display_name,l.last_name,l.party,ve.id AS vote_event_id,
+             ve.motion,ve.vote_date,ve.vote_time,lv.vote
+      FROM user_bill_positions ubp
+      JOIN bills b ON b.id=ubp.bill_id
+      JOIN vote_events ve ON ve.bill_id=b.id AND ve.event_type='FLOOR'
+      JOIN legislator_votes lv ON lv.vote_event_id=ve.id AND lv.vote IN ('YEA','NAY')
+      JOIN legislators l ON l.id=lv.legislator_id AND l.chamber=ve.chamber
+      WHERE ubp.user_id=?1 AND l.id IN (?2,?3)
+    `).bind(userId,houseRepresentativeId??-1,senateRepresentativeId??-1).all()).results??[];
+    const candidates=new Map();
+    for(const row of rollCalls){
+      const key=`${row.bill_id}:${row.legislator_id}`;
+      if(!candidates.has(key))candidates.set(key,[]);
+      candidates.get(key).push(row);
+    }
+    const positions=new Map();
+    for(const [key,rows] of candidates){
+      const chosen=selectMemberFloorVote(rows);
+      if(!chosen)continue;
+      const billId=String(chosen.bill_id);
+      if(!positions.has(billId))positions.set(billId,[]);
+      positions.get(billId).push({
+        chamber:chosen.chamber,display_name:chosen.display_name,
+        last_name:chosen.last_name,party:chosen.party,
+        position:chosen.vote==='YEA'?'YES':'NO',motion:chosen.motion
+      });
+    }
+    for(const bill of visible){
+      if(bill.user_voted)bill.lawmaker_votes=positions.get(String(bill.id))??[];
+    }
+  }
 
   return {
-    bills:filtered.slice(0,limit),
+    bills:visible,
     myVote:userFilter,
     repVote:repFilter,
     representativeAvailable:Boolean(houseRepresentativeId||senateRepresentativeId)

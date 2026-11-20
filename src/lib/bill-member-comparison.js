@@ -20,6 +20,13 @@ function compareRank(a,b){
   return b.priority-a.priority||String(b.vote_date??'').localeCompare(String(a.vote_date??''))||voteTimeSeconds(b.vote_time)-voteTimeSeconds(a.vote_time)||Number(b.vote_event_id??b.id)-Number(a.vote_event_id??a.id);
 }
 
+// Select the same official roll call on tracker cards as on bill details.
+export function selectMemberFloorVote(rows){
+  return rows.filter(row=>['YEA','NAY'].includes(row.vote))
+    .map(row=>({...row,priority:comparisonPriority(row.motion,row.instrument)}))
+    .sort(compareRank)[0]??null;
+}
+
 export function calculateMemberAlignment(rows){
   const chosen=new Map();
   for(const row of rows){

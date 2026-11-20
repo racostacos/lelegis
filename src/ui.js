@@ -148,12 +148,16 @@ export function renderBills({
          : '<span style="color:var(--teal-dark);font-weight:800"> Official vote recorded</span>'}
    </div>
 
-   ${signedIn&&b.house_representative_voted
-     ? '<div style="margin-top:10px;font-size:.82rem;font-weight:800;color:var(--vote-green)">See how your representative voted</div>'
-     : ''}
-   ${signedIn&&b.senate_representative_voted
-     ? '<div style="margin-top:6px;font-size:.82rem;font-weight:800;color:var(--vote-green)">See how your senator voted</div>'
-     : ''}
+   ${signedIn&&b.user_voted
+     ? (b.lawmaker_votes??[]).map(member=>`<div style="margin-top:8px;font-size:.82rem;font-weight:800;color:var(--vote-green)">
+         ${member.chamber==='SENATE'?'Sen.':'Rep.'} ${esc(member.last_name||member.display_name)} (${partyInitial(member.party)}) voted ${esc(member.position)}${member.motion&&!/FINAL PASSAGE|FINAL CONSIDERATION|^ADOPT$|CONCUR|CONFERENCE|VETO.*OVERRIDE/i.test(member.motion)?` on ${esc(member.motion)}`:''}.
+       </div>`).join('')
+     : `${signedIn&&b.house_representative_voted
+         ? '<div style="margin-top:10px;font-size:.82rem;font-weight:800;color:var(--vote-green)">See how your representative voted</div>'
+         : ''}
+        ${signedIn&&b.senate_representative_voted
+         ? '<div style="margin-top:6px;font-size:.82rem;font-weight:800;color:var(--vote-green)">See how your senator voted</div>'
+         : ''}`}
    <div class="small muted" style="margin-top:12px">${esc(b.official_status||'')}</div>
  </a>`;
 
