@@ -45,18 +45,20 @@ export function renderPowerSection(power){
   const colors={'Republican':'#aa3329','Democratic':'#467dbd','Independent':'#9a789d','Other / unrecorded':'#b5b8b8','No current member in database':'#e1e4e4'};
   const chart=(chamber,title)=>{
     const {seats,counts}=power.chambers[chamber];
-    const segments=Object.entries(counts).filter(([,n])=>n>0);
+    // Keep missing database seats unassigned in the bar, not labeled as independents.
+    const segments=Object.entries(counts).filter(([name,n])=>n>0&&name!=='No current member in database');
     const bar=segments.map(([label,n])=>`<span title="${esc(label)}: ${n}" style="width:${100*n/seats}%;height:100%;background:${colors[label]}"></span>`).join('');
-    return `<div style="min-width:0;flex:1 1 280px"><strong>${title}</strong><div role="img" aria-label="${esc(title)} composition: ${esc(segments.map(([name,n])=>name+' '+n).join(', '))}" style="display:flex;height:20px;overflow:hidden;border-radius:6px;background:#e1e4e4;margin:9px 0">${bar}</div><div style="font-size:12px;line-height:1.8;color:#607080">${segments.map(([name,n])=>`<span style="white-space:nowrap;margin-right:12px"><span aria-hidden="true" style="display:inline-block;width:8px;height:8px;background:${colors[name]};border-radius:50%;margin-right:4px"></span>${esc(name)} ${n}</span>`).join('')}</div><div class="small muted">${seats} seats total</div></div>`;
+    const labels=['Republican','Democratic','Independent'].map(name=>[name,counts[name]??0])
+      .concat(segments.filter(([name])=>!['Republican','Democratic','Independent'].includes(name)));
+    return `<div style="min-width:0;flex:1 1 280px"><strong>${title}</strong><div role="img" aria-label="${esc(title)} composition: ${esc(labels.map(([name,n])=>name+' '+n).join(', '))}" style="display:flex;height:20px;overflow:hidden;border-radius:6px;background:#e1e4e4;margin:9px 0">${bar}</div><div style="font-size:12px;line-height:1.8;color:#607080">${labels.map(([name,n])=>`<span style="white-space:nowrap;margin-right:12px"><span aria-hidden="true" style="display:inline-block;width:8px;height:8px;background:${colors[name]};border-radius:50%;margin-right:4px"></span>${esc(name)} ${n}</span>`).join('')}</div><div class="small muted">${seats} seats total</div></div>`;
   };
   const leaderCard=l=>`<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;min-width:0;border:1px solid #d9dfe0;border-radius:13px;overflow:hidden;background:#fff"><img src="${esc(l.photo)}" alt="Portrait of ${esc(l.name)}" loading="lazy" style="display:block;width:100%;height:110px;object-fit:cover;object-position:center 25%"><div style="padding:10px"><div style="font-size:11px;color:#607080;min-height:29px">${esc(l.title)}</div><strong style="font-size:13px;line-height:1.3;display:block">${esc(l.name)} (${l.party})</strong></div></a>`;
   return `<section id="power" class="panel" style="margin-top:22px">
     <div class="eyebrow">State government • current composition</div>
     <h2 style="margin:8px 0 10px">${esc(power.headline)}</h2>
-    <p class="small muted">Louisiana state legislature, not the U.S. Congress. Seat counts come from active LeLegis legislator records. Records missing from the database are not automatically classified as vacancies.</p>
+    <p class="small muted">Louisiana state legislature, not the U.S. Congress. Seat counts come from active LeLegis legislator records.</p>
     <div style="display:flex;gap:22px;flex-wrap:wrap;margin:20px 0">${chart('HOUSE','Louisiana House')}${chart('SENATE','Louisiana Senate')}</div>
     <h3 style="margin:20px 0 12px">Leadership</h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px">${power.leaders.map(leaderCard).join('')}</div>
-    <p class="small muted" style="margin:12px 0 0">Leadership names and roles verified November 19, 2026. Louisiana uses Senate President, Speaker and caucus chair titles; unverified “majority leader,” “minority leader” and “whip” positions are not invented. Photos and names link to their sources.</p>
   </section>`;
 }
