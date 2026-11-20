@@ -1,19 +1,51 @@
 const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 const bar = (n, max) => `<span style="display:block;height:7px;min-width:${n ? '2px' : '0'};width:${max ? Math.max(2, 100*n/max) : 0}%;border-radius:5px;background:#aa3329"></span>`;
-const mini = (title, href, data) => {
-  const peak = Math.max(1, ...data.map(row => row.count));
-  return `<a href="${href}" aria-label="View ${esc(title)} analytics" style="display:flex;flex-direction:column;justify-content:space-between;gap:8px;min-width:0;min-height:100px;border:1px solid #d9dfe0;border-radius:13px;padding:12px;text-decoration:none;color:#0d1b2a;background:white">
-    <strong style="font-size:12px">${esc(title)}</strong>
-    <span style="display:grid;gap:7px">${data.length ? data.slice(0,3).map(row => `<span style="display:block;background:#f5eeee;border-radius:6px">${bar(row.count,peak)}</span>`).join('') : '<span style="font-size:12px;color:#607080">No data</span>'}</span>
-    <span style="font-size:11px;color:#aa3329;font-weight:700">Explore →</span>
-  </a>`;
+// Compact, distinct previews. Each graphic uses the same stored counts as /analytics.
+const mini = (title, href, graphic) => `<a href="${href}" aria-label="View ${esc(title)} analytics" style="display:flex;flex-direction:column;justify-content:space-between;gap:6px;min-width:0;min-height:110px;border:1px solid #d9dfe0;border-radius:13px;padding:10px;text-decoration:none;color:#0d1b2a;background:white">
+  <strong style="font-size:12px">${esc(title)}</strong>
+  ${graphic}
+  <span style="font-size:11px;color:#aa3329;font-weight:700">Explore →</span>
+</a>`;
+
+const subjectPreview = rows => {
+  if (!rows.length) return '<span style="font-size:12px;color:#607080">No data</span>';
+  const peak = Math.max(1, ...rows.map(row => row.count));
+  return `<div role="img" aria-label="Top subjects: ${esc(rows.slice(0,3).map(row => `${row.label}: ${row.count}`).join(', '))}" style="display:grid;gap:4px;width:100%">${rows.slice(0,3).map((row, i) => `<div style="display:flex;align-items:center;gap:4px;min-width:0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:40px;flex-shrink:0;font-size:9px;color:#607080">${esc(row.label)}</span><span style="height:7px;border-radius:5px;background:#f5eeee;flex:1;overflow:hidden">${bar(row.count,peak).replace('background:#aa3329',`background:${['#aa3329','#c7776f','#dea69f'][i]}`)}</span></div>`).join('')}</div>`;
+};
+
+const outcomePreview = rows => {
+  const total = rows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+  if (!total) return '<span style="font-size:12px;color:#607080">No data</span>';
+  const top = rows.slice(0,4);
+  const other = rows.slice(4).reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const segments = other ? [...top, { label:'Other', count:other }] : top;
+  const colors = ['#aa3329','#c7776f','#e0aaa3','#ebd2cd','#80524d'];
+  const radius = 25;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  const slices = segments.map((row, i) => {
+    const len = Number(row.count) / total * circumference;
+    const slice = `<circle cx="38" cy="38" r="${radius}" fill="none" stroke="${colors[i]}" stroke-width="13" stroke-dasharray="${len} ${circumference-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 38 38)"/>`;
+    offset += len;
+    return slice;
+  }).join('');
+  return `<svg role="img" aria-label="Recorded outcomes: ${esc(segments.map(row => `${row.label}: ${row.count}`).join(', '))}" viewBox="0 0 76 76" width="70" height="58" style="align-self:center;max-width:100%"><circle cx="38" cy="38" r="${radius}" fill="none" stroke="#f5eeee" stroke-width="13"/>${slices}<text x="38" y="41" text-anchor="middle" font-size="11" font-weight="800" fill="#0d1b2a">${esc(total.toLocaleString('en-US'))}</text></svg>`;
+};
+
+const activityPreview = rows => {
+  if (!rows.length) return '<span style="font-size:12px;color:#607080">No data</span>';
+  const ordered = [...rows].sort((a,b) => String(a.label).localeCompare(String(b.label)));
+  const values = ordered.map(row => Math.max(0, Number(row.count || 0)));
+  const peak = Math.max(1, ...values);
+  const points = values.map((value,i) => `${values.length===1?46:4+i*84/(values.length-1)},${43-37*value/peak}`).join(' ');
+  return `<svg role="img" aria-label="Recorded legislative actions by month: ${esc(ordered.map(row=>`${row.label}: ${row.count}`).join(', '))}" viewBox="0 0 92 48" width="100%" height="50" preserveAspectRatio="none" style="max-width:100%"><line x1="3" x2="89" y1="43" y2="43" stroke="#eadbd8" stroke-width="1"/><polyline points="${points}" fill="none" stroke="#aa3329" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>${values.length===1?`<circle cx="46" cy="${43-37*values[0]/peak}" r="3" fill="#aa3329"/>`:''}</svg>`;
 };
 
 export function renderAnalyticsPreview(data) {
   return `<div class="analytics-preview" aria-label="Legislative analytics previews" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;width:min(100%,405px);align-self:start">
-    ${mini('By subject','/analytics#subjects',data.subjects)}
-    ${mini('Outcomes','/analytics#outcomes',data.outcomes)}
-    ${mini('Activity','/analytics#activity',data.months)}
+    ${mini('By subject','/analytics#subjects',subjectPreview(data.subjects))}
+    ${mini('Outcomes','/analytics#outcomes',outcomePreview(data.outcomes))}
+    ${mini('Activity','/analytics#activity',activityPreview(data.months))}
   </div>`;
 }
 
