@@ -58,6 +58,38 @@ const chart = (rows, name) => {
     <span style="overflow-wrap:anywhere">${esc(row.label.replaceAll('_',' '))}</span><span style="background:#f4e9e7;border-radius:7px">${bar(row.count,max)}</span><strong style="text-align:right">${row.count}</strong>
   </div>`).join('')}</div>`;
 };
+// Chronological action counts, rendered as an accessible, responsive SVG trend.
+const activityChart = rows => {
+  if (!rows.length) return '<p class="muted">No recorded data for these filters.</p>';
+  const sorted = [...rows].sort((a,b) => String(a.label).localeCompare(String(b.label)));
+  const values = sorted.map(r => Math.max(0, Number(r.count) || 0));
+  const max = Math.max(1, ...values);
+  const width = 680, height = 248, left = 58, right = 22, top = 32, bottom = 49;
+  const plotW = width - left - right, plotH = height - top - bottom;
+  const x = i => left + (sorted.length === 1 ? plotW / 2 : i * plotW / (sorted.length - 1));
+  const y = n => top + plotH * (1 - n / max);
+  const points = values.map((n,i) => `${x(i).toFixed(2)},${y(n).toFixed(2)}`).join(' ');
+  const peak = values.indexOf(Math.max(...values));
+  const fmt = n => Number(n).toLocaleString('en-US');
+  const month = label => {
+    const match = /^(\\d{4})-(\\d{2})$/.exec(String(label));
+    if (!match) return String(label);
+    const index = Number(match[2]) - 1;
+    return index >= 0 && index < 12 ? new Date(Date.UTC(Number(match[1]), index, 1)).toLocaleString('en-US',{month:'short',timeZone:'UTC'}) : String(label);
+  };
+  const grid = [0,0.5,1].map(f => {
+    const yy = y(max*f);
+    return `<line x1="${left}" y1="${yy}" x2="${width-right}" y2="${yy}" stroke="#e9dedc" stroke-width="1"/><text x="${left-12}" y="${yy+4}" text-anchor="end" font-size="12" fill="#607080">${esc(fmt(Math.round(max*f)))}</text>`;
+  }).join('');
+  const circles = sorted.map((r,i) => `<circle cx="${x(i)}" cy="${y(values[i])}" r="5" fill="${i===peak?'#aa3329':'#fff'}" stroke="#aa3329" stroke-width="2.5"><title>${esc(`${r.label}: ${fmt(values[i])} recorded actions`)}</title></circle>`).join('');
+  const labels = sorted.map((r,i) => `<text x="${x(i)}" y="${height-17}" text-anchor="middle" font-size="13" fill="#34465a">${esc(month(r.label))}</text>`).join('');
+  const peakY = Math.max(17, y(values[peak])-14);
+  return `<div style="width:100%;overflow:hidden"><svg role="img" aria-label="Recorded legislative actions by month: ${esc(sorted.map((r,i)=>`${r.label}: ${fmt(values[i])}`).join(', '))}" viewBox="0 0 ${width} ${height}" width="100%" style="display:block;height:auto;max-width:100%;font-family:Arial,sans-serif">
+    ${grid}<polyline points="${points}" fill="none" stroke="#aa3329" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${circles}${labels}
+    <text x="${x(peak)}" y="${peakY}" text-anchor="middle" font-weight="700" font-size="14" fill="#aa3329">Peak: ${esc(fmt(values[peak]))}</text>
+  </svg></div>`;
+};
 const option = (value, label, current) => `<option value="${esc(value)}"${value===current?' selected':''}>${esc(label)}</option>`;
 
 export function renderAnalyticsBody(data) {
@@ -78,7 +110,7 @@ export function renderAnalyticsBody(data) {
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr))">
       <details id="subjects" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">By subject</summary><p class="small muted">Official subject labels, not inferred policy categories.</p>${chart(data.subjects.slice(0,20))}</details>
       <details id="outcomes" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Recorded outcomes</summary><p class="small muted">Stored status values. Adoption of a resolution is not passage of an ordinary bill.</p>${chart(data.outcomes)}</details>
-      <details id="activity" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Activity over time</summary><p class="small muted">Number of recorded legislative actions by month, not number of unique bills.</p>${chart(data.months)}</details>
+      <details id="activity" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Activity over time</summary><p class="small muted">Number of recorded legislative actions by month, not number of unique bills. Hover over a point for details.</p>${activityChart(data.months)}</details>
       <details id="chambers" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Originating chamber</summary>${chart(data.chambers)}</details>
       <details id="parties" class="panel" open><summary style="font:700 25px Georgia,serif;cursor:pointer;margin-bottom:12px">Originating party</summary><p class="small muted">One measure per recorded primary-author party. Measures with unknown or mixed authorship are shown separately.</p>${chart(data.parties ?? [])}</details>
     </div>
